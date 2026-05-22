@@ -1,0 +1,113 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>NeuroFlow</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/liquid.css"/>
+  <link rel="stylesheet" href="css/home.css"/>
+</head>
+<body>
+
+<div class="nf-bg"></div>
+<div class="orb orb-a"></div>
+<div class="orb orb-b"></div>
+<div class="orb orb-c"></div>
+
+<div class="app-shell">
+
+  <header class="app-header glass">
+    <div class="brand">
+      <div class="brand-icon">
+        <!-- New logo: a minimal flow/neural node mark -->
+        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+          <circle cx="12" cy="12" r="3" fill="currentColor" opacity="0.9"/>
+          <circle cx="4"  cy="5"  r="1.8" fill="currentColor" opacity="0.55"/>
+          <circle cx="20" cy="5"  r="1.8" fill="currentColor" opacity="0.55"/>
+          <circle cx="4"  cy="19" r="1.8" fill="currentColor" opacity="0.55"/>
+          <circle cx="20" cy="19" r="1.8" fill="currentColor" opacity="0.55"/>
+          <line x1="4"  y1="5"  x2="12" y2="12" stroke="currentColor" stroke-width="1.2" opacity="0.45"/>
+          <line x1="20" y1="5"  x2="12" y2="12" stroke="currentColor" stroke-width="1.2" opacity="0.45"/>
+          <line x1="4"  y1="19" x2="12" y2="12" stroke="currentColor" stroke-width="1.2" opacity="0.45"/>
+          <line x1="20" y1="19" x2="12" y2="12" stroke="currentColor" stroke-width="1.2" opacity="0.45"/>
+        </svg>
+      </div>
+      <span class="brand-name">NeuroFlow</span>
+    </div>
+    <div class="header-right">
+      <button class="lg-btn ghost sm theme-toggle" id="themeToggle" title="Alternar tema">
+        <svg class="icon-moon" viewBox="0 0 20 20" fill="none">
+          <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" fill="currentColor"/>
+        </svg>
+        <svg class="icon-sun" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="4" fill="currentColor"/>
+          <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+    </div>
+  </header>
+
+  <!-- Create Task -->
+  <section>
+    <div class="glass create-panel">
+      <h2 class="section-title">Nova Tarefa</h2>
+      <div class="create-form">
+        <input class="lg-input" id="taskNameInput" placeholder="Nome da tarefa..." maxlength="60" autocomplete="off"/>
+        <input class="lg-input" id="taskDescInput" placeholder="Descrição (opcional)..." maxlength="120" autocomplete="off"/>
+        <div class="color-picker-row">
+          <span class="color-label">Cor</span>
+                    <div class="color-options" id="colorPicker">
+            <button class="color-dot active" data-color="#60a5fa" style="background:#60a5fa"></button>
+            <button class="color-dot" data-color="#3b82f6" style="background:#3b82f6"></button>
+            <button class="color-dot" data-color="#6366f1" style="background:#6366f1"></button>
+            <button class="color-dot" data-color="#a78bfa" style="background:#a78bfa"></button>
+            <button class="color-dot" data-color="#ec4899" style="background:#ec4899"></button>
+            <button class="color-dot" data-color="#f472b6" style="background:#f472b6"></button>
+            <button class="color-dot" data-color="#f43f5e" style="background:#f43f5e"></button>
+            <button class="color-dot" data-color="#fb923c" style="background:#fb923c"></button>
+            <button class="color-dot" data-color="#facc15" style="background:#facc15"></button>
+            <button class="color-dot" data-color="#34d399" style="background:#34d399"></button>
+            <button class="color-dot" data-color="#2dd4bf" style="background:#2dd4bf"></button>
+            <button class="color-dot" data-color="#94a3b8" style="background:#94a3b8"></button>
+            <button class="color-dot" data-color="#e2e8f0" style="background:#e2e8f0"></button>
+            <button class="color-dot" data-color="#a16207" style="background:#a16207"></button>
+            <button class="color-dot" data-color="#be123c" style="background:#be123c"></button>
+            <button class="color-dot" data-color="#166534" style="background:#166534"></button>
+            
+            <!-- AS DUAS NOVAS CORES ADICIONADAS PARA COMPLETAR AS 18: -->
+            <button class="color-dot" data-color="#475569" style="background:#475569"></button>
+            <button class="color-dot" data-color="#556b2f" style="background:#556b2f"></button>
+          </div>
+
+        </div>
+        <button class="lg-btn primary" id="createTaskBtn">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+          Criar Tarefa
+        </button>
+      </div>
+    </div>
+  </section>
+
+  <!-- Task List -->
+  <section class="tasks-section">
+    <div class="tasks-header">
+      <h2 class="section-title">Minhas Tarefas</h2>
+      <span class="task-count" id="taskCount">0 tarefas</span>
+    </div>
+    <div class="tasks-grid" id="tasksGrid">
+      <div class="empty-state" id="emptyState">
+        <div class="empty-icon">—</div>
+        <p>Nenhuma tarefa ainda.<br>Crie sua primeira acima.</p>
+      </div>
+    </div>
+  </section>
+
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/home.js"></script>
+</body>
+</html>

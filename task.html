@@ -1,0 +1,202 @@
+<!DOCTYPE html>
+<html lang="pt-BR" data-theme="dark">
+<head>
+  <meta charset="UTF-8"/>
+  <meta name="viewport" content="width=device-width,initial-scale=1.0"/>
+  <title>NeuroFlow — Tarefa</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/liquid.css"/>
+  <link rel="stylesheet" href="css/task.css"/>
+</head>
+<body>
+
+<div class="nf-bg"></div>
+<div class="orb orb-a"></div>
+<div class="orb orb-b"></div>
+<div class="orb orb-c"></div>
+
+<div class="app-shell">
+
+  <header class="task-header glass">
+    <button class="lg-btn ghost sm back-btn" onclick="window.location='index.html'">
+      <svg viewBox="0 0 20 20" fill="none">
+        <path d="M12 4L6 10l6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      Início
+    </button>
+    <div class="task-title-block">
+      <div class="task-color-bar" id="taskColorBar"></div>
+      <h1 class="task-page-title" id="taskPageTitle">Carregando...</h1>
+    </div>
+    <div class="header-actions">
+      <button class="lg-btn ghost sm theme-toggle" id="themeToggle" title="Alternar tema">
+        <svg class="icon-moon" viewBox="0 0 20 20" fill="none">
+          <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" fill="currentColor"/>
+        </svg>
+        <svg class="icon-sun" viewBox="0 0 20 20" fill="none">
+          <circle cx="10" cy="10" r="4" fill="currentColor"/>
+          <path d="M10 2v2M10 16v2M2 10h2M16 10h2M4.22 4.22l1.42 1.42M14.36 14.36l1.42 1.42M4.22 15.78l1.42-1.42M14.36 5.64l1.42-1.42" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+        </svg>
+      </button>
+      <button class="lg-btn danger sm" id="deleteTaskBtn">
+        <svg viewBox="0 0 20 20" fill="none">
+          <path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+        </svg>
+        Excluir
+      </button>
+    </div>
+  </header>
+
+  <div class="task-body">
+
+    <!-- LEFT COLUMN -->
+    <div class="left-col">
+
+      <!-- FOCUS TIMER -->
+      <div class="glass timer-panel" id="timerPanelEl">
+        <div class="timer-panel-header">
+          <div class="panel-title" style="margin-bottom:0">Focus Timer</div>
+          <button class="lg-btn ghost sm" id="timerToggleBtn" title="Mostrar/ocultar timer">
+            <svg id="timerToggleIcon" viewBox="0 0 20 20" fill="none">
+              <path d="M4 6h12M4 10h12M4 14h12" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/>
+            </svg>
+          </button>
+        </div>
+        <div id="timerBody">
+
+        <div class="timer-ring-wrap">
+          <svg class="timer-ring" viewBox="0 0 120 120">
+            <circle class="ring-bg" cx="60" cy="60" r="52"/>
+            <circle class="ring-progress" id="ringProgress" cx="60" cy="60" r="52"/>
+          </svg>
+          <div class="timer-inner" id="timerInner">25:00</div>
+        </div>
+
+        <div class="timer-session-label">
+          <span id="sessionCount">0</span> sessões completadas
+        </div>
+
+        <div class="timer-config">
+          <span class="config-label">Duração (min)</span>
+          <div class="config-row">
+            <input class="lg-input sm" type="number" id="timerMinutes" value="25" min="1" max="180"/>
+            <button class="lg-btn ghost sm" id="timerSetBtn">Definir</button>
+          </div>
+        </div>
+
+        <div class="timer-controls">
+          <button class="lg-btn primary sm" id="timerStart">
+            <svg viewBox="0 0 20 20" fill="none"><path d="M6 4l12 6-12 6V4z" fill="currentColor"/></svg>
+          </button>
+          <button class="lg-btn ghost sm" id="timerPause">
+            <svg viewBox="0 0 20 20" fill="none">
+              <rect x="5" y="4" width="4" height="12" rx="1" fill="currentColor"/>
+              <rect x="11" y="4" width="4" height="12" rx="1" fill="currentColor"/>
+            </svg>
+          </button>
+          <button class="lg-btn ghost sm" id="timerReset">
+            <svg viewBox="0 0 20 20" fill="none">
+              <path d="M4 10a6 6 0 1 1 1.5 4" stroke="currentColor" stroke-width="2" stroke-linecap="round"/>
+              <path d="M4 14V10h4" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+            </svg>
+          </button>
+        </div>
+        </div><!-- /timerBody -->
+      </div>
+
+      <!-- CHECKLIST -->
+      <div class="glass checklist-panel">
+        <h3 class="panel-title">Checklist</h3>
+        <div class="add-check-row">
+          <input class="lg-input" id="checkInput" placeholder="Novo item..."/>
+          <button class="lg-btn primary sm" id="addCheckBtn">+</button>
+        </div>
+        <ul class="checklist" id="checklist"></ul>
+        <div class="check-progress-row">
+          <div class="check-bar-wrap">
+            <div class="check-bar-fill" id="checkBarFill"></div>
+          </div>
+          <span id="checkProgressText">0 / 0</span>
+        </div>
+      </div>
+
+    </div><!-- /left-col -->
+
+    <!-- RIGHT COLUMN -->
+    <div class="right-col">
+      <div class="glass tree-panel">
+        <div class="tree-toolbar">
+          <h3 class="panel-title">Árvore de Notas</h3>
+          <div class="toolbar-actions">
+            <button class="lg-btn ghost sm" id="expandAllBtn">Expandir tudo</button>
+            <button class="lg-btn ghost sm" id="collapseAllBtn">Recolher</button>
+            <button class="lg-btn primary sm" id="addRootNodeBtn">
+              <svg viewBox="0 0 20 20" fill="none"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+              Nova anotação
+            </button>
+          </div>
+        </div>
+        
+        <div class="tree-container" id="treeContainer">
+          <div class="tree-empty" id="treeEmpty">
+            <div class="empty-icon">—</div>
+            <p>Nenhuma nota ainda. Adicione uma nova anotação!.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- Node Modal -->
+<div class="modal-overlay" id="nodeModal" style="display:none">
+  <div class="glass modal-panel">
+    <h3 class="panel-title" id="modalTitle">Nova anotação</h3>
+    <input class="lg-input" id="nodeTextInput" placeholder="Nova anotação..."/>
+    <textarea class="lg-textarea" id="nodeBodyInput" placeholder="Escreva. Conecte. Organize."></textarea>
+
+    <!-- Image section -->
+    <div class="modal-img-section">
+      <div class="modal-img-label">Imagem (opcional)</div>
+      <div class="modal-img-row">
+        <input class="lg-input sm" id="nodeImgUrl" placeholder="Cole uma URL de imagem..."/>
+        <label class="lg-btn ghost sm modal-img-upload" title="Fazer upload de imagem">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M10 3v10M6 7l4-4 4 4" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"/><path d="M3 15h14" stroke="currentColor" stroke-width="1.8" stroke-linecap="round"/></svg>
+          Upload
+          <input type="file" id="nodeImgFile" accept="image/*" style="display:none"/>
+        </label>
+        <button class="lg-btn ghost sm" id="nodeImgClear" style="display:none" title="Remover imagem">
+          <svg viewBox="0 0 20 20" fill="none"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+      <img id="nodeImgPreview" class="modal-img-preview" src="" alt="preview" style="display:none"/>
+    </div>
+
+    <div class="modal-actions">
+      <button class="lg-btn ghost sm" id="modalCancel">Cancelar</button>
+      <button class="lg-btn primary sm" id="modalSave">Salvar</button>
+    </div>
+  </div>
+</div>
+
+<!-- Confirm Modal -->
+<div class="modal-overlay" id="confirmModal" style="display:none">
+  <div class="glass modal-panel small">
+    <h3 class="panel-title">Excluir tarefa?</h3>
+    <p class="modal-text">Esta ação não pode ser desfeita. Todos os dados da tarefa serão perdidos.</p>
+    <div class="modal-actions">
+      <button class="lg-btn ghost sm" id="confirmCancel">Cancelar</button>
+      <button class="lg-btn danger sm" id="confirmDelete">Excluir</button>
+    </div>
+  </div>
+</div>
+
+<script src="js/storage.js"></script>
+<script src="js/theme.js"></script>
+<script src="js/timer.js"></script>
+<script src="js/tree.js"></script>
+<script src="js/task.js"></script>
+</body>
+</html>
