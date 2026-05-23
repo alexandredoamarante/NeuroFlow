@@ -119,38 +119,52 @@ function renderSafeLinks(text, container) {
   container.innerHTML = '';
   if (!text) return;
 
-  const wikiRegex = /^\[\[.*?\]\]$/;
-  const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
-  const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
+  const lines = text.split('\n');
+  lines.forEach(lineText => {
+    const lineDiv = document.createElement('div');
+    lineDiv.className = 'node-line';
 
-  const parts = text.split(combinedRegex);
-  parts.forEach(part => {
-    if (!part) return;
-
-    if (wikiRegex.test(part)) {
-      const linkText = part.slice(2, -2);
-      const span = document.createElement('span');
-      span.className = 'node-link';
-      span.textContent = linkText;
-      span.onclick = (e) => {
-        e.stopPropagation();
-        navigateToNodeByTitle(linkText);
-      };
-      container.appendChild(span);
-    } else if (urlRegex.test(part)) {
-      let href = part;
-      if (part.startsWith('www.')) href = 'http://' + part;
-      const a = document.createElement('a');
-      a.href = href;
-      a.className = 'node-link';
-      a.textContent = part;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.onclick = (e) => e.stopPropagation();
-      container.appendChild(a);
-    } else {
-      container.appendChild(document.createTextNode(part));
+    if (lineText.startsWith('>')) {
+      lineDiv.classList.add('greentext');
+    } else if (lineText.startsWith('<')) {
+      lineDiv.classList.add('redtext');
     }
+
+    const wikiRegex = /^\[\[.*?\]\]$/;
+    const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
+    const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
+
+    const parts = lineText.split(combinedRegex);
+    parts.forEach(part => {
+      if (!part) return;
+
+      if (wikiRegex.test(part)) {
+        const linkText = part.slice(2, -2);
+        const span = document.createElement('span');
+        span.className = 'node-link';
+        span.textContent = linkText;
+        span.onclick = (e) => {
+          e.stopPropagation();
+          navigateToNodeByTitle(linkText);
+        };
+        lineDiv.appendChild(span);
+      } else if (urlRegex.test(part)) {
+        let href = part;
+        if (part.startsWith('www.')) href = 'http://' + part;
+        const a = document.createElement('a');
+        a.href = href;
+        a.className = 'node-link';
+        a.textContent = part;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.onclick = (e) => e.stopPropagation();
+        lineDiv.appendChild(a);
+      } else {
+        lineDiv.appendChild(document.createTextNode(part));
+      }
+    });
+
+    container.appendChild(lineDiv);
   });
 }
 

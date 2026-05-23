@@ -220,6 +220,19 @@
   overflow-wrap: anywhere;
 }
 
+.node-line {
+  min-height: 1.2em;
+  white-space: pre-wrap;
+}
+
+.greentext {
+  color: #2ecc71;
+}
+
+.redtext {
+  color: #e74c3c;
+}
+
 .check-item.done .check-text {
   text-decoration: line-through;
   opacity: 0.5;

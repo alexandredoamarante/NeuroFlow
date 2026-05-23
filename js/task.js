@@ -108,8 +108,8 @@ function deleteCheck(index) {
 }
 
 addCheckBtn?.addEventListener('click', () => {
-  const text = checkInput.value.trim();
-  if (!text) return;
+  const text = checkInput.value;
+  if (!text.trim()) return;
   if (!currentTask.checklist) currentTask.checklist = [];
   currentTask.checklist.push({ text, done: false });
   syncAndSaveTask();
