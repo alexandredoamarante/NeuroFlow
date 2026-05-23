@@ -119,14 +119,16 @@ function renderSafeLinks(text, container) {
   container.innerHTML = '';
   if (!text) return;
 
-  const lines = text.split('\n');
+  // Normalizar quebras de linha e dividir
+  const lines = text.replace(/\r/g, '').split('\n');
   lines.forEach(lineText => {
     const lineDiv = document.createElement('div');
     lineDiv.className = 'node-line';
 
-    if (lineText.trimStart().startsWith('>')) {
+    const trimmed = lineText.trimStart();
+    if (trimmed.startsWith('>')) {
       lineDiv.classList.add('greentext');
-    } else if (lineText.trimStart().startsWith('<')) {
+    } else if (trimmed.startsWith('<')) {
       lineDiv.classList.add('redtext');
     }
 

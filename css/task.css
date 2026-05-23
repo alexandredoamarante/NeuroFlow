@@ -231,18 +231,18 @@
   white-space: pre-wrap;
 }
 
-.greentext {
+.greentext, .greentext * {
   color: #2ecc71 !important;
-  font-weight: 500;
+  font-weight: 700 !important;
   letter-spacing: 0.2px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
 }
 
-.redtext {
+.redtext, .redtext * {
   color: #e74c3c !important;
-  font-weight: 500;
+  font-weight: 700 !important;
   letter-spacing: 0.2px;
-  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace !important;
 }
 
 .check-item.done .check-text {
