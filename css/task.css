@@ -227,10 +227,16 @@
 
 .greentext {
   color: #2ecc71;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .redtext {
   color: #e74c3c;
+  font-weight: 500;
+  letter-spacing: 0.2px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
 }
 
 .check-item.done .check-text {

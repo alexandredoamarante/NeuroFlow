@@ -57,7 +57,7 @@ function renderChecklist() {
     cb.innerHTML = item.done ? '<svg viewBox="0 0 20 20" fill="none" style="width:12px;height:12px;"><path d="M4 10l4 4 8-8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '';
     cb.onclick = () => toggleCheck(index);
 
-    const textSpan = document.createElement('span');
+    const textSpan = document.createElement('div');
     textSpan.className = 'check-text';
     if (typeof renderSafeLinks === 'function') {
       renderSafeLinks(item.text, textSpan);
