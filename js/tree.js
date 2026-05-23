@@ -4,6 +4,7 @@ const nodeModal = document.getElementById('nodeModal');
 const nodeTextInput = document.getElementById('nodeTextInput');
 const nodeBodyInput = document.getElementById('nodeBodyInput');
 const nodeImgUrl = document.getElementById('nodeImgUrl');
+const nodeImgFile = document.getElementById('nodeImgFile');
 const nodeImgPreview = document.getElementById('nodeImgPreview');
 const nodeImgClear = document.getElementById('nodeImgClear');
 const modalSave = document.getElementById('modalSave');
@@ -73,6 +74,29 @@ function renderTree(nodes, container, taskId) {
     };
 
     nodeEl.appendChild(header);
+
+    if (node.body || node.img) {
+      const contentEl = document.createElement('div');
+      contentEl.className = 'node-content';
+      contentEl.style.display = node.expanded ? 'block' : 'none';
+
+      if (node.img) {
+        const img = document.createElement('img');
+        img.src = node.img;
+        img.className = 'node-img';
+        contentEl.appendChild(img);
+      }
+
+      if (node.body) {
+        const bodyText = document.createElement('div');
+        bodyText.className = 'node-body-text';
+        bodyText.textContent = node.body;
+        contentEl.appendChild(bodyText);
+      }
+
+      nodeEl.appendChild(contentEl);
+    }
+
     nodeEl.appendChild(childrenContainer);
 
     container.appendChild(nodeEl);
@@ -111,7 +135,10 @@ function addNode(parentId = null) {
   nodeTextInput.value = '';
   nodeBodyInput.value = '';
   nodeImgUrl.value = '';
+  nodeImgFile.value = '';
+  nodeImgPreview.src = '';
   nodeImgPreview.style.display = 'none';
+  nodeImgClear.style.display = 'none';
   nodeModal.style.display = 'flex';
 }
 
@@ -124,8 +151,10 @@ function editNode(id) {
   if (node.img) {
     nodeImgPreview.src = node.img;
     nodeImgPreview.style.display = 'block';
+    nodeImgClear.style.display = 'block';
   } else {
     nodeImgPreview.style.display = 'none';
+    nodeImgClear.style.display = 'none';
   }
   nodeModal.style.display = 'flex';
 }
@@ -188,6 +217,37 @@ modalSave?.addEventListener('click', () => {
 });
 
 modalCancel?.addEventListener('click', () => nodeModal.style.display = 'none');
+
+nodeImgFile?.addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (ev) => {
+    nodeImgUrl.value = ev.target.result;
+    nodeImgPreview.src = ev.target.result;
+    nodeImgPreview.style.display = 'block';
+    nodeImgClear.style.display = 'block';
+  };
+  reader.readAsDataURL(file);
+});
+
+nodeImgUrl?.addEventListener('input', () => {
+  if (nodeImgUrl.value) {
+    nodeImgPreview.src = nodeImgUrl.value;
+    nodeImgPreview.style.display = 'block';
+    nodeImgClear.style.display = 'block';
+  } else {
+    nodeImgPreview.style.display = 'none';
+    nodeImgClear.style.display = 'none';
+  }
+});
+
+nodeImgClear?.addEventListener('click', () => {
+  nodeImgUrl.value = '';
+  nodeImgFile.value = '';
+  nodeImgPreview.style.display = 'none';
+  nodeImgClear.style.display = 'none';
+});
 
 window.addNode = addNode;
 window.editNode = editNode;

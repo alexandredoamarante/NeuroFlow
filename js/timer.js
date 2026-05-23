@@ -11,6 +11,13 @@ const timerSetBtn = document.getElementById('timerSetBtn');
 const timerStart = document.getElementById('timerStart');
 const timerPause = document.getElementById('timerPause');
 const timerReset = document.getElementById('timerReset');
+const timerToggleBtn = document.getElementById('timerToggleBtn');
+const timerBody = document.getElementById('timerBody');
+
+timerToggleBtn?.addEventListener('click', () => {
+  const isHidden = timerBody.style.display === 'none';
+  timerBody.style.display = isHidden ? 'block' : 'none';
+});
 
 function updateTimerDisplay() {
   const mins = Math.floor(timeLeft / 60);
