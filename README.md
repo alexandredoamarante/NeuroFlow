@@ -2,12 +2,12 @@
 
 Uma ferramenta centralizada de organização e foco que une anotações hierárquicas, gestão de tempo e acompanhamento de tarefas.
 
-## 🚀 Link de Acesso
+## Link de Acesso
 **[Acesse o NeuroFlow aqui](https://alexandredoamarante.github.io/NeuroFlow/)**
 
 ---
 
-## 🛠️ Funcionalidades
+##  Funcionalidades
 
 ### 1. Notas Hierárquicas (Árvore de Notas)
 *   **Organização Multinível:** Crie notas e sub-notas de forma infinita para organizar pensamentos complexos ou projetos.
@@ -29,7 +29,7 @@ Uma ferramenta centralizada de organização e foco que une anotações hierárq
 
 ---
 
-## 💡 Para o que pode ser usado?
+##  Para o que pode ser usado?
 *   **Mapeamento Mental:** Estruturação de ideias e brainstorming.
 *   **Estudos:** Organização de matérias, tópicos e cronogramas de revisão.
 *   **Gestão de Projetos:** Divisão de grandes objetivos em pequenas tarefas acionáveis.
