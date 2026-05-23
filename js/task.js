@@ -57,9 +57,13 @@ function renderChecklist() {
     cb.innerHTML = item.done ? '<svg viewBox="0 0 20 20" fill="none" style="width:12px;height:12px;"><path d="M4 10l4 4 8-8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '';
     cb.onclick = () => toggleCheck(index);
 
-    const textSpan = document.createElement('span');
+    const textSpan = document.createElement('div');
     textSpan.className = 'check-text';
-    textSpan.textContent = item.text;
+    if (typeof renderSafeLinks === 'function') {
+      renderSafeLinks(item.text, textSpan);
+    } else {
+      textSpan.textContent = item.text;
+    }
 
     const delBtn = document.createElement('button');
     delBtn.className = 'lg-btn ghost sm';
@@ -104,8 +108,8 @@ function deleteCheck(index) {
 }
 
 addCheckBtn?.addEventListener('click', () => {
-  const text = checkInput.value.trim();
-  if (!text) return;
+  const text = checkInput.value;
+  if (!text.trim()) return;
   if (!currentTask.checklist) currentTask.checklist = [];
   currentTask.checklist.push({ text, done: false });
   syncAndSaveTask();
