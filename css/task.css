@@ -389,6 +389,18 @@
   color: #93c5fd;
 }
 
+.greentext, .greentext * {
+  color: #22c55e !important;
+  font-weight: 700 !important;
+  font-family: 'DM Mono', monospace !important;
+}
+
+.redtext, .redtext * {
+  color: #ff5555 !important;
+  font-weight: 700 !important;
+  font-family: 'DM Mono', monospace !important;
+}
+
 .highlight-link {
   animation: link-flash 2s ease-out;
 }
