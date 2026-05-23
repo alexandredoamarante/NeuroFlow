@@ -380,6 +380,18 @@
   color: #93c5fd;
 }
 
+.greentext {
+  color: #2ecc71 !important;
+  font-family: 'DM Mono', monospace;
+  white-space: pre-wrap;
+}
+
+.redtext {
+  color: #e74c3c !important;
+  font-family: 'DM Mono', monospace;
+  white-space: pre-wrap;
+}
+
 .highlight-link {
   animation: link-flash 2s ease-out;
 }

@@ -117,21 +117,32 @@ function renderTree(nodes, container, taskId) {
 
 function renderSafeLinks(text, container) {
   container.innerHTML = '';
-  const parts = text.split(/(\[\[.*?\]\])/g);
-  parts.forEach(part => {
-    if (part.startsWith('[[') && part.endsWith(']]')) {
-      const linkText = part.slice(2, -2);
-      const span = document.createElement('span');
-      span.className = 'node-link';
-      span.textContent = linkText;
-      span.onclick = (e) => {
-        e.stopPropagation();
-        navigateToNodeByTitle(linkText);
-      };
-      container.appendChild(span);
-    } else {
-      container.appendChild(document.createTextNode(part));
+  const lines = text.split('\n');
+  lines.forEach(line => {
+    const lineDiv = document.createElement('div');
+    if (line.startsWith('>')) {
+      lineDiv.className = 'greentext';
+    } else if (line.startsWith('<')) {
+      lineDiv.className = 'redtext';
     }
+
+    const parts = line.split(/(\[\[.*?\]\])/g);
+    parts.forEach(part => {
+      if (part.startsWith('[[') && part.endsWith(']]')) {
+        const linkText = part.slice(2, -2);
+        const span = document.createElement('span');
+        span.className = 'node-link';
+        span.textContent = linkText;
+        span.onclick = (e) => {
+          e.stopPropagation();
+          navigateToNodeByTitle(linkText);
+        };
+        lineDiv.appendChild(span);
+      } else {
+        lineDiv.appendChild(document.createTextNode(part));
+      }
+    });
+    container.appendChild(lineDiv);
   });
 }
 
