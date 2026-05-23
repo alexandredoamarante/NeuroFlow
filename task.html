@@ -181,6 +181,11 @@
 
     <textarea class="lg-textarea" id="nodeBodyInput" placeholder="Escreva. Conecte. Organize."></textarea>
 
+    <div class="modal-preview-section">
+      <div class="modal-img-label">Visualização</div>
+      <div class="glass modal-preview-area" id="nodePreviewArea"></div>
+    </div>
+
     <div class="modal-actions">
       <button class="lg-btn ghost sm" id="modalCancel">Cancelar</button>
       <button class="lg-btn primary sm" id="modalSave">Salvar</button>
@@ -210,10 +215,11 @@
   </div>
 </div>
 
-<script src="js/storage.js"></script>
-<script src="js/theme.js"></script>
-<script src="js/timer.js"></script>
-<script src="js/tree.js"></script>
-<script src="js/task.js"></script>
+<!-- Script versioning to prevent caching issues on deployment -->
+<script src="js/storage.js?v=1.0.1"></script>
+<script src="js/theme.js?v=1.0.1"></script>
+<script src="js/timer.js?v=1.0.1"></script>
+<script src="js/tree.js?v=1.0.1"></script>
+<script src="js/task.js?v=1.0.1"></script>
 </body>
 </html>

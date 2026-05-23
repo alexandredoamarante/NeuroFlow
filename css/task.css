@@ -389,6 +389,18 @@
   color: #93c5fd;
 }
 
+.greentext, .greentext * {
+  color: #22c55e !important;
+  font-weight: 700 !important;
+  font-family: 'DM Mono', monospace !important;
+}
+
+.redtext, .redtext * {
+  color: #ff5555 !important;
+  font-weight: 700 !important;
+  font-family: 'DM Mono', monospace !important;
+}
+
 .highlight-link {
   animation: link-flash 2s ease-out;
 }
@@ -480,4 +492,24 @@
   object-fit: contain;
   border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
+}
+
+.modal-preview-section {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.modal-preview-area {
+  padding: 1rem;
+  min-height: 60px;
+  max-height: 200px;
+  overflow-y: auto;
+  font-size: 0.85rem;
+  line-height: 1.5;
+  background: rgba(0, 0, 0, 0.2);
+  border-color: var(--glass-border);
+  color: var(--text-dim);
+  white-space: pre-wrap;
+  word-break: break-word;
 }

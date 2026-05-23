@@ -9,6 +9,7 @@ const nodeImgUrl = document.getElementById('nodeImgUrl');
 const nodeImgFile = document.getElementById('nodeImgFile');
 const nodeImgPreview = document.getElementById('nodeImgPreview');
 const nodeImgClear = document.getElementById('nodeImgClear');
+const nodePreviewArea = document.getElementById('nodePreviewArea');
 const imageViewer = document.getElementById('imageViewer');
 const viewerImg = document.getElementById('viewerImg');
 const modalSave = document.getElementById('modalSave');
@@ -115,41 +116,66 @@ function renderTree(nodes, container, taskId) {
   });
 }
 
+const wikiRegex = /^\[\[.*?\]\]$/;
+const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
+const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
+
 function renderSafeLinks(text, container) {
   container.innerHTML = '';
   if (!text) return;
 
-  const wikiRegex = /^\[\[.*?\]\]$/;
-  const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
-  const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
+  // Split text into lines to support per-line styling (greentext/redtext)
+  const lines = text.replace(/\r/g, '').split('\n');
 
-  const parts = text.split(combinedRegex);
-  parts.forEach(part => {
-    if (!part) return;
+  lines.forEach((line, index) => {
+    let target = container;
 
-    if (wikiRegex.test(part)) {
-      const linkText = part.slice(2, -2);
+    // Apply styling based on leading characters
+    if (line.trimStart().startsWith('>')) {
       const span = document.createElement('span');
-      span.className = 'node-link';
-      span.textContent = linkText;
-      span.onclick = (e) => {
-        e.stopPropagation();
-        navigateToNodeByTitle(linkText);
-      };
+      span.className = 'greentext';
       container.appendChild(span);
-    } else if (urlRegex.test(part)) {
-      let href = part;
-      if (part.startsWith('www.')) href = 'http://' + part;
-      const a = document.createElement('a');
-      a.href = href;
-      a.className = 'node-link';
-      a.textContent = part;
-      a.target = '_blank';
-      a.rel = 'noopener noreferrer';
-      a.onclick = (e) => e.stopPropagation();
-      container.appendChild(a);
-    } else {
-      container.appendChild(document.createTextNode(part));
+      target = span;
+    } else if (line.trimStart().startsWith('<')) {
+      const span = document.createElement('span');
+      span.className = 'redtext';
+      container.appendChild(span);
+      target = span;
+    }
+
+    const parts = line.split(combinedRegex);
+    parts.forEach(part => {
+      if (!part) return;
+
+      if (wikiRegex.test(part)) {
+        const linkText = part.slice(2, -2);
+        const span = document.createElement('span');
+        span.className = 'node-link';
+        span.textContent = linkText;
+        span.onclick = (e) => {
+          e.stopPropagation();
+          navigateToNodeByTitle(linkText);
+        };
+        target.appendChild(span);
+      } else if (urlRegex.test(part)) {
+        let href = part;
+        if (part.startsWith('www.')) href = 'http://' + part;
+        const a = document.createElement('a');
+        a.href = href;
+        a.className = 'node-link';
+        a.textContent = part;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.onclick = (e) => e.stopPropagation();
+        target.appendChild(a);
+      } else {
+        target.appendChild(document.createTextNode(part));
+      }
+    });
+
+    // Add newline if not the last line
+    if (index < lines.length - 1) {
+      container.appendChild(document.createTextNode('\n'));
     }
   });
 }
@@ -253,6 +279,7 @@ function addNode(parentId = null) {
   parentNodeId = parentId;
   nodeTextInput.value = '';
   nodeBodyInput.value = '';
+  if (nodePreviewArea) nodePreviewArea.innerHTML = '';
   nodeImgUrl.value = '';
   nodeImgFile.value = '';
   nodeImgPreview.src = '';
@@ -267,6 +294,7 @@ function editNode(id) {
   editingNodeId = id;
   nodeTextInput.value = node.text || '';
   nodeBodyInput.value = node.body || '';
+  if (nodePreviewArea) renderSafeLinks(node.body || '', nodePreviewArea);
   nodeImgUrl.value = node.img || '';
   if (node.img) {
     nodeImgPreview.src = node.img;
@@ -396,6 +424,12 @@ nodeImgClear?.addEventListener('click', () => {
   nodeImgFile.value = '';
   nodeImgPreview.style.display = 'none';
   nodeImgClear.style.display = 'none';
+});
+
+nodeBodyInput?.addEventListener('input', () => {
+  if (nodePreviewArea) {
+    renderSafeLinks(nodeBodyInput.value, nodePreviewArea);
+  }
 });
 
 function setAllExpanded(nodes, state) {
