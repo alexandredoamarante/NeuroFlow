@@ -9,6 +9,7 @@ const nodeImgUrl = document.getElementById('nodeImgUrl');
 const nodeImgFile = document.getElementById('nodeImgFile');
 const nodeImgPreview = document.getElementById('nodeImgPreview');
 const nodeImgClear = document.getElementById('nodeImgClear');
+const nodePreviewArea = document.getElementById('nodePreviewArea');
 const imageViewer = document.getElementById('imageViewer');
 const viewerImg = document.getElementById('viewerImg');
 const modalSave = document.getElementById('modalSave');
@@ -130,12 +131,12 @@ function renderSafeLinks(text, container) {
     let target = container;
 
     // Apply styling based on leading characters
-    if (line.startsWith('>')) {
+    if (line.trimStart().startsWith('>')) {
       const span = document.createElement('span');
       span.className = 'greentext';
       container.appendChild(span);
       target = span;
-    } else if (line.startsWith('<')) {
+    } else if (line.trimStart().startsWith('<')) {
       const span = document.createElement('span');
       span.className = 'redtext';
       container.appendChild(span);
@@ -278,6 +279,7 @@ function addNode(parentId = null) {
   parentNodeId = parentId;
   nodeTextInput.value = '';
   nodeBodyInput.value = '';
+  if (nodePreviewArea) nodePreviewArea.innerHTML = '';
   nodeImgUrl.value = '';
   nodeImgFile.value = '';
   nodeImgPreview.src = '';
@@ -292,6 +294,7 @@ function editNode(id) {
   editingNodeId = id;
   nodeTextInput.value = node.text || '';
   nodeBodyInput.value = node.body || '';
+  if (nodePreviewArea) renderSafeLinks(node.body || '', nodePreviewArea);
   nodeImgUrl.value = node.img || '';
   if (node.img) {
     nodeImgPreview.src = node.img;
@@ -421,6 +424,12 @@ nodeImgClear?.addEventListener('click', () => {
   nodeImgFile.value = '';
   nodeImgPreview.style.display = 'none';
   nodeImgClear.style.display = 'none';
+});
+
+nodeBodyInput?.addEventListener('input', () => {
+  if (nodePreviewArea) {
+    renderSafeLinks(nodeBodyInput.value, nodePreviewArea);
+  }
 });
 
 function setAllExpanded(nodes, state) {
