@@ -59,7 +59,11 @@ function renderChecklist() {
 
     const textSpan = document.createElement('span');
     textSpan.className = 'check-text';
-    textSpan.textContent = item.text;
+    if (typeof renderSafeLinks === 'function') {
+      renderSafeLinks(item.text, textSpan);
+    } else {
+      textSpan.textContent = item.text;
+    }
 
     const delBtn = document.createElement('button');
     delBtn.className = 'lg-btn ghost sm';

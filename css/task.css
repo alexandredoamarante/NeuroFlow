@@ -183,7 +183,7 @@
 
 .check-item {
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   gap: 10px;
   padding: 8px 0;
   border-bottom: 1px solid rgba(255, 255, 255, 0.05);
@@ -203,6 +203,7 @@
   align-items: center;
   justify-content: center;
   transition: all 0.2s;
+  margin-top: 2px;
 }
 
 .check-cb.active {
@@ -214,6 +215,9 @@
 .check-text {
   flex: 1;
   font-size: 0.9rem;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .check-item.done .check-text {
@@ -328,6 +332,9 @@
   font-size: 0.95rem;
   color: #fff;
   font-weight: 500;
+  white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .node-content {
@@ -367,6 +374,8 @@
   color: var(--text-dim);
   line-height: 1.5;
   white-space: pre-wrap;
+  word-break: break-word;
+  overflow-wrap: anywhere;
 }
 
 .node-link {

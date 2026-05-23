@@ -117,9 +117,17 @@ function renderTree(nodes, container, taskId) {
 
 function renderSafeLinks(text, container) {
   container.innerHTML = '';
-  const parts = text.split(/(\[\[.*?\]\])/g);
+  if (!text) return;
+
+  const wikiRegex = /^\[\[.*?\]\]$/;
+  const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
+  const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
+
+  const parts = text.split(combinedRegex);
   parts.forEach(part => {
-    if (part.startsWith('[[') && part.endsWith(']]')) {
+    if (!part) return;
+
+    if (wikiRegex.test(part)) {
       const linkText = part.slice(2, -2);
       const span = document.createElement('span');
       span.className = 'node-link';
@@ -129,6 +137,17 @@ function renderSafeLinks(text, container) {
         navigateToNodeByTitle(linkText);
       };
       container.appendChild(span);
+    } else if (urlRegex.test(part)) {
+      let href = part;
+      if (part.startsWith('www.')) href = 'http://' + part;
+      const a = document.createElement('a');
+      a.href = href;
+      a.className = 'node-link';
+      a.textContent = part;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.onclick = (e) => e.stopPropagation();
+      container.appendChild(a);
     } else {
       container.appendChild(document.createTextNode(part));
     }
