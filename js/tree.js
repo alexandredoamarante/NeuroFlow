@@ -9,7 +9,6 @@ const nodeImgUrl = document.getElementById('nodeImgUrl');
 const nodeImgFile = document.getElementById('nodeImgFile');
 const nodeImgPreview = document.getElementById('nodeImgPreview');
 const nodeImgClear = document.getElementById('nodeImgClear');
-const nodePreviewArea = document.getElementById('nodePreviewArea');
 const imageViewer = document.getElementById('imageViewer');
 const viewerImg = document.getElementById('viewerImg');
 const modalSave = document.getElementById('modalSave');
@@ -40,7 +39,7 @@ function renderTree(nodes, container, taskId) {
 
     const title = document.createElement('div');
     title.className = 'node-title';
-    renderSafeLinks(node.text, title);
+    renderSafeLinks(node.text, title, false);
 
     const actions = document.createElement('div');
     actions.className = 'node-actions';
@@ -120,7 +119,7 @@ const wikiRegex = /^\[\[.*?\]\]$/;
 const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
 const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
 
-function renderSafeLinks(text, container) {
+function renderSafeLinks(text, container, applyColor = true) {
   container.innerHTML = '';
   if (!text) return;
 
@@ -131,12 +130,12 @@ function renderSafeLinks(text, container) {
     let target = container;
 
     // Apply styling based on leading characters
-    if (line.trimStart().startsWith('>')) {
+    if (applyColor && line.startsWith('>')) {
       const span = document.createElement('span');
       span.className = 'greentext';
       container.appendChild(span);
       target = span;
-    } else if (line.trimStart().startsWith('<')) {
+    } else if (applyColor && line.startsWith('<')) {
       const span = document.createElement('span');
       span.className = 'redtext';
       container.appendChild(span);
@@ -279,7 +278,6 @@ function addNode(parentId = null) {
   parentNodeId = parentId;
   nodeTextInput.value = '';
   nodeBodyInput.value = '';
-  if (nodePreviewArea) nodePreviewArea.innerHTML = '';
   nodeImgUrl.value = '';
   nodeImgFile.value = '';
   nodeImgPreview.src = '';
@@ -294,7 +292,6 @@ function editNode(id) {
   editingNodeId = id;
   nodeTextInput.value = node.text || '';
   nodeBodyInput.value = node.body || '';
-  if (nodePreviewArea) renderSafeLinks(node.body || '', nodePreviewArea);
   nodeImgUrl.value = node.img || '';
   if (node.img) {
     nodeImgPreview.src = node.img;
@@ -424,12 +421,6 @@ nodeImgClear?.addEventListener('click', () => {
   nodeImgFile.value = '';
   nodeImgPreview.style.display = 'none';
   nodeImgClear.style.display = 'none';
-});
-
-nodeBodyInput?.addEventListener('input', () => {
-  if (nodePreviewArea) {
-    renderSafeLinks(nodeBodyInput.value, nodePreviewArea);
-  }
 });
 
 function setAllExpanded(nodes, state) {
