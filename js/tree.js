@@ -39,6 +39,7 @@ function renderTree(nodes, container, taskId) {
 
     const title = document.createElement('div');
     title.className = 'node-title';
+    // Node titles do not support greentext/redtext styling
     renderSafeLinks(node.text, title, false);
 
     const actions = document.createElement('div');
@@ -117,31 +118,17 @@ function renderTree(nodes, container, taskId) {
 
 const wikiRegex = /^\[\[.*?\]\]$/;
 const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
-const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
+const greenRegex = /^>[^\s]+$/;
+const redRegex = /^<[^\s]+$/;
+const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+|>[^\s]+|<[^\s]+)/g;
 
 function renderSafeLinks(text, container, applyColor = true) {
   container.innerHTML = '';
   if (!text) return;
 
-  // Split text into lines to support per-line styling (greentext/redtext)
   const lines = text.replace(/\r/g, '').split('\n');
 
   lines.forEach((line, index) => {
-    let target = container;
-
-    // Apply styling based on leading characters
-    if (applyColor && line.startsWith('>')) {
-      const span = document.createElement('span');
-      span.className = 'greentext';
-      container.appendChild(span);
-      target = span;
-    } else if (applyColor && line.startsWith('<')) {
-      const span = document.createElement('span');
-      span.className = 'redtext';
-      container.appendChild(span);
-      target = span;
-    }
-
     const parts = line.split(combinedRegex);
     parts.forEach(part => {
       if (!part) return;
@@ -155,7 +142,7 @@ function renderSafeLinks(text, container, applyColor = true) {
           e.stopPropagation();
           navigateToNodeByTitle(linkText);
         };
-        target.appendChild(span);
+        container.appendChild(span);
       } else if (urlRegex.test(part)) {
         let href = part;
         if (part.startsWith('www.')) href = 'http://' + part;
@@ -166,13 +153,22 @@ function renderSafeLinks(text, container, applyColor = true) {
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         a.onclick = (e) => e.stopPropagation();
-        target.appendChild(a);
+        container.appendChild(a);
+      } else if (applyColor && greenRegex.test(part)) {
+        const span = document.createElement('span');
+        span.className = 'greentext';
+        span.textContent = part;
+        container.appendChild(span);
+      } else if (applyColor && redRegex.test(part)) {
+        const span = document.createElement('span');
+        span.className = 'redtext';
+        span.textContent = part;
+        container.appendChild(span);
       } else {
-        target.appendChild(document.createTextNode(part));
+        container.appendChild(document.createTextNode(part));
       }
     });
 
-    // Add newline if not the last line
     if (index < lines.length - 1) {
       container.appendChild(document.createTextNode('\n'));
     }

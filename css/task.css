@@ -391,13 +391,13 @@
 
 .greentext, .greentext * {
   color: #22c55e !important;
-  font-weight: 700 !important;
+  font-weight: 500 !important;
   font-family: 'DM Mono', monospace !important;
 }
 
 .redtext, .redtext * {
   color: #ff5555 !important;
-  font-weight: 700 !important;
+  font-weight: 500 !important;
   font-family: 'DM Mono', monospace !important;
 }
 
