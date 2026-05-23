@@ -24,6 +24,13 @@
   --font-main: 'DM Mono', monospace;
 }
 
+@media (max-width: 640px) {
+  :root {
+    --radius-lg: 16px;
+    --radius-md: 12px;
+  }
+}
+
 [data-theme="light"] {
   --bg-color: #f0f0f0;
   --text-color: #1a1a1a;
@@ -252,6 +259,12 @@ body {
   position: relative;
 }
 
+@media (max-width: 640px) {
+  .app-shell {
+    padding: 1rem;
+  }
+}
+
 /* Header */
 .app-header, .task-header {
   display: flex;
@@ -259,6 +272,13 @@ body {
   justify-content: space-between;
   padding: 1rem 2rem;
   margin-bottom: 2rem;
+}
+
+@media (max-width: 640px) {
+  .app-header, .task-header {
+    padding: 0.8rem 1rem;
+    margin-bottom: 1rem;
+  }
 }
 
 .brand {

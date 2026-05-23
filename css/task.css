@@ -31,6 +31,50 @@
   gap: 2rem;
 }
 
+@media (max-width: 900px) {
+  .task-body {
+    grid-template-columns: 1fr;
+  }
+
+  .left-col {
+    order: 2;
+  }
+
+  .right-col {
+    order: 1;
+  }
+
+  .task-header {
+    flex-wrap: wrap;
+    padding: 1rem;
+  }
+
+  .task-title-block {
+    order: -1;
+    width: 100%;
+    margin-bottom: 0.5rem;
+  }
+}
+
+@media (max-width: 600px) {
+  .tree-toolbar {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 1rem;
+  }
+
+  .toolbar-actions {
+    width: 100%;
+    justify-content: space-between;
+  }
+
+  .node-img {
+    width: 100%;
+    height: auto;
+    aspect-ratio: 16/10;
+  }
+}
+
 .left-col, .right-col {
   display: flex;
   flex-direction: column;
@@ -240,6 +284,13 @@
   margin-bottom: 0.5rem;
 }
 
+@media (max-width: 600px) {
+  .tree-node {
+    margin-left: 0.8rem;
+    padding-left: 0.8rem;
+  }
+}
+
 .tree-node:hover {
   border-left-color: rgba(255, 255, 255, 0.2);
 }
@@ -333,6 +384,12 @@
 
 .node-header:hover .node-actions {
   opacity: 1;
+}
+
+@media (max-width: 600px) {
+  .node-actions {
+    opacity: 1;
+  }
 }
 
 /* Modal */

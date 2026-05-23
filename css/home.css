@@ -76,6 +76,20 @@
   gap: 1.5rem;
 }
 
+@media (max-width: 640px) {
+  .create-form {
+    flex-direction: column;
+  }
+
+  .tasks-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .color-options {
+    grid-template-columns: repeat(6, 1fr);
+  }
+}
+
 .task-card {
   padding: 1.5rem;
   cursor: pointer;
