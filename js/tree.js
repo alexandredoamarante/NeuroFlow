@@ -28,10 +28,10 @@ function renderTree(nodes, container, taskId) {
 
   nodes.forEach(node => {
     const nodeEl = document.createElement('div');
-    nodeEl.className = 'tree-node';
+    nodeEl.className = `tree-node ${container === treeContainer ? 'is-root' : ''}`;
 
     const header = document.createElement('div');
-    header.className = 'node-header';
+    header.className = `node-header ${node.expanded ? 'expanded' : ''}`;
 
     const toggle = document.createElement('div');
     toggle.className = `node-toggle ${node.expanded ? 'expanded' : ''}`;
