@@ -1,0 +1,257 @@
+.app-shell {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 20px;
+}
+
+.task-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 12px 20px;
+  margin-bottom: 20px;
+}
+
+.task-title-block {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.task-color-bar {
+  width: 4px;
+  height: 24px;
+  border-radius: 2px;
+}
+
+.task-page-title {
+  font-size: 1.2rem;
+  font-weight: 600;
+}
+
+.header-actions {
+  display: flex;
+  gap: 10px;
+}
+
+.task-body {
+  display: grid;
+  grid-template-columns: 350px 1fr;
+  gap: 20px;
+}
+
+@media (max-width: 900px) {
+  .task-body {
+    grid-template-columns: 1fr;
+  }
+}
+
+.left-col, .right-col {
+  display: flex;
+  flex-direction: column;
+  gap: 20px;
+}
+
+/* Timer */
+.timer-panel {
+  padding: 25px;
+  text-align: center;
+}
+
+.timer-panel-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 20px;
+}
+
+.timer-ring-wrap {
+  position: relative;
+  width: 180px;
+  height: 180px;
+  margin: 0 auto 20px;
+}
+
+.timer-ring {
+  width: 100%;
+  height: 100%;
+  transform: rotate(-90deg);
+}
+
+.ring-bg {
+  fill: none;
+  stroke: rgba(255, 255, 255, 0.05);
+  stroke-width: 6;
+}
+
+.ring-progress {
+  fill: none;
+  stroke: var(--accent-color);
+  stroke-width: 6;
+  stroke-linecap: round;
+  stroke-dasharray: 326.7;
+  stroke-dashoffset: 326.7;
+  transition: stroke-dashoffset 0.3s;
+}
+
+.timer-inner {
+  position: absolute;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  font-size: 2.5rem;
+  font-weight: 500;
+  font-family: 'DM Mono', monospace;
+}
+
+.timer-session-label {
+  font-size: 0.85rem;
+  color: var(--text-secondary);
+  margin-bottom: 20px;
+}
+
+.timer-config {
+  margin-bottom: 20px;
+}
+
+.config-label {
+  display: block;
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  margin-bottom: 8px;
+}
+
+.config-row {
+  display: flex;
+  gap: 10px;
+}
+
+.timer-controls {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+}
+
+/* Checklist */
+.checklist-panel {
+  padding: 25px;
+}
+
+.add-check-row {
+  display: flex;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.checklist {
+  list-style: none;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+
+.check-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 12px;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.03);
+  transition: background 0.2s;
+}
+
+.check-item:hover {
+  background: rgba(255, 255, 255, 0.06);
+}
+
+.check-item.done span {
+  text-decoration: line-through;
+  opacity: 0.5;
+}
+
+.check-progress-row {
+  display: flex;
+  align-items: center;
+  gap: 15px;
+}
+
+.check-bar-wrap {
+  flex: 1;
+  height: 6px;
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+  overflow: hidden;
+}
+
+.check-bar-fill {
+  height: 100%;
+  background: var(--accent-color);
+  width: 0%;
+  transition: width 0.3s;
+}
+
+#checkProgressText {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+}
+
+/* Tree / Notes */
+.tree-panel {
+  padding: 25px;
+  min-height: 500px;
+}
+
+.tree-toolbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 25px;
+}
+
+.toolbar-actions {
+  display: flex;
+  gap: 8px;
+}
+
+.tree-container {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.tree-node {
+  border-left: 1px solid var(--glass-border);
+  margin-left: 10px;
+  padding-left: 15px;
+}
+
+.node-header {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 0;
+  cursor: pointer;
+}
+
+.node-title {
+  flex: 1;
+  font-size: 0.95rem;
+}
+
+.node-actions {
+  opacity: 0;
+  transition: opacity 0.2s;
+  display: flex;
+  gap: 5px;
+}
+
+.node-header:hover .node-actions {
+  opacity: 1;
+}
+
+.tree-empty {
+  text-align: center;
+  padding: 100px 0;
+  color: var(--text-secondary);
+}
