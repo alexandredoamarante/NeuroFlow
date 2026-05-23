@@ -99,7 +99,7 @@ function renderTree(nodes, container, taskId) {
       if (node.body) {
         const bodyText = document.createElement('div');
         bodyText.className = 'node-body-text';
-        bodyText.textContent = node.body;
+        renderSafeLinks(node.body, bodyText);
         contentEl.appendChild(bodyText);
       }
 
@@ -124,11 +124,73 @@ function renderSafeLinks(text, container) {
       const span = document.createElement('span');
       span.className = 'node-link';
       span.textContent = linkText;
+      span.onclick = (e) => {
+        e.stopPropagation();
+        navigateToNodeByTitle(linkText);
+      };
       container.appendChild(span);
     } else {
       container.appendChild(document.createTextNode(part));
     }
   });
+}
+
+function navigateToNodeByTitle(title) {
+  const target = findNodeByTitle(currentNodes, title);
+  if (target) {
+    // Expand parents and the target itself to show content
+    expandParents(currentNodes, target.id);
+    target.expanded = true;
+    saveCurrentNodes();
+    renderTree(currentNodes, treeContainer);
+
+    // Scroll and highlight
+    setTimeout(() => {
+      const els = document.querySelectorAll('.node-title');
+      for (const el of els) {
+        if (el.textContent === title) {
+          const nodeEl = el.closest('.tree-node');
+          nodeEl.scrollIntoView({ behavior: 'smooth', block: 'center' });
+          nodeEl.classList.add('highlight-link');
+          setTimeout(() => nodeEl.classList.remove('highlight-link'), 2000);
+          break;
+        }
+      }
+    }, 100);
+  } else {
+    alert(`Nota "${title}" não encontrada.`);
+  }
+}
+
+function findNodeByTitle(nodes, title) {
+  for (const n of nodes) {
+    if (n.text === title) return n;
+    if (n.children) {
+      const found = findNodeByTitle(n.children, title);
+      if (found) return found;
+    }
+  }
+  return null;
+}
+
+function expandParents(nodes, targetId) {
+  for (const n of nodes) {
+    if (isAncestor(n, targetId)) {
+      n.expanded = true;
+      if (n.children) expandParents(n.children, targetId);
+      return true;
+    }
+  }
+  return false;
+}
+
+function isAncestor(node, targetId) {
+  if (node.id === targetId) return false;
+  if (!node.children) return false;
+  for (const child of node.children) {
+    if (child.id === targetId || isAncestor(child, targetId)) return true;
+  }
+  return false;
 }
 
 function saveCurrentNodes() {

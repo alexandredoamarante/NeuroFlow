@@ -373,6 +373,20 @@
   color: #60a5fa;
   text-decoration: underline;
   cursor: pointer;
+  transition: color 0.2s;
+}
+
+.node-link:hover {
+  color: #93c5fd;
+}
+
+.highlight-link {
+  animation: link-flash 2s ease-out;
+}
+
+@keyframes link-flash {
+  0% { background: rgba(96, 165, 250, 0.3); }
+  100% { background: transparent; }
 }
 
 .node-actions {
