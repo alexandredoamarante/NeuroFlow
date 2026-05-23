@@ -8,6 +8,12 @@
   <link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&display=swap" rel="stylesheet">
   <link rel="stylesheet" href="css/liquid.css"/>
   <link rel="stylesheet" href="css/home.css"/>
+  <style>
+    /* Critical CSS to prevent large logo / white screen before CSS loads */
+    body { background: #080808; margin: 0; padding: 0; }
+    .brand-icon svg { width: 32px; height: 32px; }
+    .nf-bg { background: #080808; position: fixed; inset: 0; z-index: -2; }
+  </style>
 </head>
 <body>
 
@@ -22,7 +28,7 @@
     <div class="brand">
       <div class="brand-icon">
         <!-- New logo: a minimal flow/neural node mark -->
-        <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
+        <svg width="32" height="32" viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
           <circle cx="12" cy="12" r="3" fill="currentColor" opacity="0.9"/>
           <circle cx="4"  cy="5"  r="1.8" fill="currentColor" opacity="0.55"/>
           <circle cx="20" cy="5"  r="1.8" fill="currentColor" opacity="0.55"/>
