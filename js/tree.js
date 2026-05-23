@@ -131,8 +131,8 @@ function renderSafeLinks(text, container) {
     }
 
     const wikiRegex = /^\[\[.*?\]\]$/;
-    const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
-    const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
+    const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|io|br|me|info|biz|tv)[^\s]*)$/;
+    const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+|[a-zA-Z0-9.-]+\.(?:com|org|net|edu|gov|io|br|me|info|biz|tv)[^\s]*)/g;
 
     const parts = lineText.split(combinedRegex);
     parts.forEach(part => {
@@ -150,7 +150,7 @@ function renderSafeLinks(text, container) {
         lineDiv.appendChild(span);
       } else if (urlRegex.test(part)) {
         let href = part;
-        if (part.startsWith('www.')) href = 'http://' + part;
+        if (!part.startsWith('http')) href = 'http://' + part;
         const a = document.createElement('a');
         a.href = href;
         a.className = 'node-link';

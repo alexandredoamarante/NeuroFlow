@@ -196,6 +196,7 @@
 .check-cb {
   width: 18px;
   height: 18px;
+  flex-shrink: 0;
   border: 1px solid var(--glass-border);
   border-radius: 4px;
   cursor: pointer;
@@ -218,6 +219,11 @@
   white-space: pre-wrap;
   word-break: break-word;
   overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.check-item button {
+  flex-shrink: 0;
 }
 
 .node-line {
@@ -304,15 +310,11 @@
   padding-left: 1.2rem;
   position: relative;
   transition: all 0.3s ease;
-  margin-bottom: 0.8rem;
-  padding-bottom: 0.8rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.03);
+  margin-bottom: 0.4rem;
 }
 
 .tree-node.is-root {
   margin-left: 0;
-  border-bottom-width: 2px;
-  border-bottom-color: rgba(255, 255, 255, 0.05);
 }
 
 @media (max-width: 600px) {
@@ -350,7 +352,6 @@
 
 .node-header.expanded {
   background: rgba(255, 255, 255, 0.03);
-  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.05);
 }
 
 .node-toggle {
