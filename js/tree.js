@@ -118,9 +118,7 @@ function renderTree(nodes, container, taskId) {
 
 const wikiRegex = /^\[\[.*?\]\]$/;
 const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
-const greenRegex = /^>[^\s]+$/;
-const redRegex = /^<[^\s]+$/;
-const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+|>[^\s]+|<[^\s]+)/g;
+const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
 
 function renderSafeLinks(text, container, applyColor = true) {
   container.innerHTML = '';
@@ -129,6 +127,20 @@ function renderSafeLinks(text, container, applyColor = true) {
   const lines = text.replace(/\r/g, '').split('\n');
 
   lines.forEach((line, index) => {
+    let target = container;
+
+    if (applyColor && line.startsWith('>')) {
+      const span = document.createElement('span');
+      span.className = 'greentext';
+      container.appendChild(span);
+      target = span;
+    } else if (applyColor && line.startsWith('<')) {
+      const span = document.createElement('span');
+      span.className = 'redtext';
+      container.appendChild(span);
+      target = span;
+    }
+
     const parts = line.split(combinedRegex);
     parts.forEach(part => {
       if (!part) return;
@@ -142,7 +154,7 @@ function renderSafeLinks(text, container, applyColor = true) {
           e.stopPropagation();
           navigateToNodeByTitle(linkText);
         };
-        container.appendChild(span);
+        target.appendChild(span);
       } else if (urlRegex.test(part)) {
         let href = part;
         if (part.startsWith('www.')) href = 'http://' + part;
@@ -153,19 +165,9 @@ function renderSafeLinks(text, container, applyColor = true) {
         a.target = '_blank';
         a.rel = 'noopener noreferrer';
         a.onclick = (e) => e.stopPropagation();
-        container.appendChild(a);
-      } else if (applyColor && greenRegex.test(part)) {
-        const span = document.createElement('span');
-        span.className = 'greentext';
-        span.textContent = part;
-        container.appendChild(span);
-      } else if (applyColor && redRegex.test(part)) {
-        const span = document.createElement('span');
-        span.className = 'redtext';
-        span.textContent = part;
-        container.appendChild(span);
+        target.appendChild(a);
       } else {
-        container.appendChild(document.createTextNode(part));
+        target.appendChild(document.createTextNode(part));
       }
     });
 
