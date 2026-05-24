@@ -13,16 +13,24 @@ Uma ferramenta centralizada de organização e foco que une anotações hierárq
 *   **Organização Multinível:** Crie notas e sub-notas de forma infinita para organizar pensamentos complexos ou projetos.
 *   **Anexos de Mídia:** Suporte para imagens (via Upload ou URL) com otimização automática de espaço.
 *   **Gestão de Visualização:** Controles para expandir ou recolher todos os níveis da árvore instantaneamente.
+*   **Conexões [[Wikilinks]]:** Crie links entre notas usando o formato `[[Título da Nota]]` para navegação rápida.
+*   **Estilização de Texto:** Suporte para **Greentext** (linhas começando com `>`) e **Redtext** (linhas começando com `<`) para destaque visual.
 
-### 2. Gestão de Foco e Tempo
+### 2. Marca-texto e Comentários Inline
+*   **Destaque Persistente:** Selecione qualquer trecho de texto em uma nota renderizada para criar um destaque (highlight) permanente.
+*   **Comentários Inline:** Clique em um destaque para abrir um painel de comentários. Adicione, edite ou exclua observações contextuais.
+*   **Sem Limites:** Comentários suportam múltiplas linhas (textarea) e não possuem limite de caracteres, com barras de rolagem inteligentes para textos longos.
+*   **Comandos de Escrita:** No campo de comentários, use `Enter` para enviar e `Shift + Enter` para quebrar linha.
+
+### 3. Gestão de Foco e Tempo
 *   **Timer Pomodoro:** Cronômetro integrado para sessões de trabalho focado, com ciclos personalizáveis.
 *   **Contador de Sessões:** Registro automático de ciclos de foco concluídos.
 
-### 3. Checklist de Execução
+### 4. Checklist de Execução
 *   **Lista de Tarefas:** Sistema de tarefas simples com marcação de conclusão.
 *   **Barra de Progresso:** Indicador visual da porcentagem de conclusão dos itens da lista.
 
-### 4. Tecnologia e Privacidade
+### 5. Tecnologia e Privacidade
 *   **Offline First:** Todos os dados são salvos localmente no seu navegador.
 *   **Sem Cadastro:** Comece a usar instantaneamente sem necessidade de conta ou login.
 
