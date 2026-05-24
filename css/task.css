@@ -523,72 +523,90 @@
   box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
 }
 
-.popover-single-comment {
+.popover-content {
   flex: 1;
-  margin-bottom: 1.5rem;
-  min-height: 40px;
-  max-height: 200px;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-.comment-text.scrollable {
-  overflow-y: auto;
-  padding-right: 8px;
+.popover-display-area {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.comment-content {
   font-size: 0.9rem;
-  line-height: 1.5;
+  line-height: 1.6;
   white-space: pre-wrap;
   word-break: break-word;
+  max-height: 200px;
+  overflow-y: auto;
+  padding-right: 8px;
+  color: rgba(255, 255, 255, 0.9);
 }
 
-.comment-text.scrollable::-webkit-scrollbar {
+.comment-content a {
+  color: #60a5fa;
+  text-decoration: underline;
+}
+
+.comment-content::-webkit-scrollbar {
   width: 5px;
 }
 
-.comment-text.scrollable::-webkit-scrollbar-thumb {
+.comment-content::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 3px;
 }
 
-.popover-input-row {
-  display: flex;
-  gap: 0.5rem;
+.edit-note-btn {
+  align-self: flex-start;
+  margin-top: 0.5rem;
 }
 
-.popover-input-row textarea {
-  flex: 1;
+.popover-edit-area {
+  display: flex;
+  flex-direction: column;
+  gap: 0.8rem;
+}
+
+.popover-edit-area textarea {
+  width: 100%;
+  min-height: 120px;
+  max-height: 200px;
   background: rgba(0, 0, 0, 0.2);
   border: 1px solid var(--glass-border);
-  border-radius: 4px;
+  border-radius: var(--radius-sm);
   color: #fff;
-  padding: 8px 10px;
-  font-size: 0.85rem;
+  padding: 12px;
+  font-size: 0.9rem;
   outline: none;
-  resize: none;
-  min-height: 38px;
-  max-height: 120px;
+  resize: vertical;
   font-family: inherit;
-  line-height: 1.4;
+  line-height: 1.5;
+  transition: border-color 0.2s;
 }
 
-.popover-input-row textarea::-webkit-scrollbar {
+.popover-edit-area textarea:focus {
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.popover-edit-area textarea::-webkit-scrollbar {
   width: 4px;
 }
 
-.popover-input-row textarea::-webkit-scrollbar-thumb {
+.popover-edit-area textarea::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
   border-radius: 2px;
 }
 
-.popover-input-row button {
-  background: rgba(255, 255, 255, 0.1);
-  border: 1px solid var(--glass-border);
-  border-radius: 4px;
-  color: #fff;
-  padding: 0 10px;
-  font-size: 0.8rem;
-  cursor: pointer;
+.edit-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+  margin-top: 0.2rem;
 }
 
 .comment-empty {

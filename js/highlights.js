@@ -38,7 +38,7 @@ const Highlights = {
       <div class="popover-content">
         <div class="popover-header">
           <button class="popover-unmark" id="popoverUnmark">Desmarcar</button>
-          <span>Nota Técnica</span>
+          <span>Marcar Texto</span>
           <button class="popover-close">×</button>
         </div>
 
@@ -50,11 +50,14 @@ const Highlights = {
           <div class="color-opt" data-color="rgba(168, 85, 247, 0.4)" style="background: #a855f7"></div>
         </div>
 
-        <div class="popover-single-comment" id="popoverComment"></div>
+        <div class="popover-display-area" id="popoverComment"></div>
 
-        <div class="popover-input-row">
-          <textarea id="popoverInput" placeholder="Escreva um comentário..." rows="1"></textarea>
-          <button id="popoverSave">Salvar</button>
+        <div class="popover-edit-area" id="popoverEditArea" style="display: none">
+          <textarea id="popoverInput" placeholder="Escreva um comentário..." rows="3"></textarea>
+          <div class="edit-actions">
+             <button class="lg-btn ghost sm" id="popoverCancel">Cancelar</button>
+             <button class="lg-btn primary sm" id="popoverSave">Salvar</button>
+          </div>
         </div>
       </div>
     `;
@@ -67,6 +70,10 @@ const Highlights = {
 
     popover.querySelector('#popoverUnmark').onclick = () => this.removeHighlight();
     popover.querySelector('#popoverSave').onclick = () => this.saveComment();
+    popover.querySelector('#popoverCancel').onclick = () => {
+      document.getElementById('popoverEditArea').style.display = 'none';
+      document.getElementById('popoverComment').style.display = 'flex';
+    };
 
     popover.querySelectorAll('.color-opt').forEach(opt => {
       opt.onclick = () => this.updateColor(opt.dataset.color);
@@ -311,22 +318,34 @@ const Highlights = {
   renderComments() {
     const display = this.popover.querySelector('#popoverComment');
     const input = this.popover.querySelector('#popoverInput');
+    const editArea = this.popover.querySelector('#popoverEditArea');
     const highlight = this.activeHighlight.highlight;
 
     display.innerHTML = '';
 
     if (highlight.comment) {
       const textDiv = document.createElement('div');
-      textDiv.className = 'comment-text scrollable';
-      // Use renderSafeLinks equivalent here for clickable links
+      textDiv.className = 'comment-content';
       this.renderCommentText(highlight.comment, textDiv);
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'lg-btn ghost sm edit-note-btn';
+      editBtn.textContent = 'Editar texto';
+      editBtn.onclick = () => {
+        display.style.display = 'none';
+        editArea.style.display = 'flex';
+        input.focus();
+      };
+
       display.appendChild(textDiv);
+      display.appendChild(editBtn);
+
       input.value = highlight.comment;
+      display.style.display = 'flex';
+      editArea.style.display = 'none';
     } else {
-      const empty = document.createElement('div');
-      empty.className = 'comment-empty';
-      empty.textContent = 'Sem comentário. Escreva abaixo para adicionar.';
-      display.appendChild(empty);
+      display.style.display = 'none';
+      editArea.style.display = 'flex';
       input.value = '';
     }
 
@@ -366,6 +385,11 @@ const Highlights = {
 
     this.activeHighlight.highlight.comment = text;
     Storage.saveTask(this.activeHighlight.task);
+
+    // Switch back to display mode
+    document.getElementById('popoverEditArea').style.display = 'none';
+    document.getElementById('popoverComment').style.display = 'flex';
+
     this.renderComments();
   },
 
