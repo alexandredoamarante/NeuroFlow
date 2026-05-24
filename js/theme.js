@@ -11,6 +11,23 @@ themeToggle?.addEventListener('click', () => {
   setTheme(current === 'dark' ? 'light' : 'dark');
 });
 
-// Init
+// Init Theme
 const savedTheme = localStorage.getItem('neuroflow_theme') || 'dark';
 setTheme(savedTheme);
+
+// Info Modal Logic
+const infoToggle = document.getElementById('infoToggle');
+const infoModal = document.getElementById('infoModal');
+const infoClose = document.getElementById('infoClose');
+
+infoToggle?.addEventListener('click', () => {
+  if (infoModal) infoModal.style.display = 'flex';
+});
+
+infoClose?.addEventListener('click', () => {
+  if (infoModal) infoModal.style.display = 'none';
+});
+
+infoModal?.addEventListener('click', (e) => {
+  if (e.target === infoModal) infoModal.style.display = 'none';
+});
