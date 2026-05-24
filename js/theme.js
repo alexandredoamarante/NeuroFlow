@@ -31,3 +31,9 @@ infoClose?.addEventListener('click', () => {
 infoModal?.addEventListener('click', (e) => {
   if (e.target === infoModal) infoModal.style.display = 'none';
 });
+
+document.addEventListener('keydown', (e) => {
+  if (e.key === 'Escape' && infoModal && infoModal.style.display === 'flex') {
+    infoModal.style.display = 'none';
+  }
+});
