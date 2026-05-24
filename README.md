@@ -16,9 +16,9 @@ Uma ferramenta centralizada de organização e foco que une anotações hierárq
 *   **Conexões [[Wikilinks]]:** Crie links entre notas usando o formato `[[Título da Nota]]` para navegação rápida.
 *   **Estilização de Texto:** Suporte para **Greentext** (linhas começando com `>`) e **Redtext** (linhas começando com `<`) para destaque visual.
 
-### 2. Marca-texto e Nota Técnica
+### 2. Marca-texto
 *   **Destaque Personalizado:** Selecione qualquer trecho de texto em uma nota renderizada para criar um destaque (highlight). Escolha entre 5 cores diferentes para organizar seus pensamentos.
-*   **Nota Técnica Única:** Clique em um destaque para abrir o painel de "Nota Técnica". Cada marcação suporta uma anotação detalhada com suporte a links clicáveis.
+*   **Anotações Inline:** Clique em um destaque para abrir o painel de "Marcar Texto". Cada marcação suporta uma anotação detalhada com suporte a links clicáveis.
 *   **Foco na Leitura:** O painel possui rolagem interna e altura otimizada para leitura de textos longos, permitindo que você aprofunde suas anotações sem poluir a interface.
 *   **Edição Flexível:** Use o botão "Editar texto" para atualizar suas anotações a qualquer momento. No campo de texto, use `Enter` para salvar e `Shift + Enter` para quebrar linha.
 
