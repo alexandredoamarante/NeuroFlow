@@ -512,3 +512,6 @@ imageViewer?.addEventListener('click', (e) => {
 window.addNode = addNode;
 window.editNode = editNode;
 window.deleteNode = deleteNode;
+window.renderTree = renderTree;
+window.currentNodes = currentNodes;
+window.findNode = findNode;
