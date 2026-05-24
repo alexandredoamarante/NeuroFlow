@@ -38,7 +38,7 @@ const Highlights = {
       <div class="popover-content">
         <div class="popover-header">
           <button class="popover-unmark" id="popoverUnmark">Desmarcar</button>
-          <span>Nota Técnica</span>
+          <span>Marcar Texto</span>
           <button class="popover-close">×</button>
         </div>
 
@@ -395,7 +395,7 @@ const Highlights = {
   },
 
   removeHighlight() {
-    if (!confirm('Deseja remover este destaque e todos os seus comentários?')) return;
+    if (!confirm('Deseja remover este destaque e sua anotação?')) return;
 
     const { node, highlight, task } = this.activeHighlight;
     node.highlights = node.highlights.filter(h => h.id !== highlight.id);

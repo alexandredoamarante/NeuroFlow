@@ -91,11 +91,23 @@ function renderTree(nodes, container, taskId) {
         const img = document.createElement('img');
         img.src = node.img;
         img.className = 'node-img';
+
+        img.onmouseenter = (e) => {
+          showImagePreview(node.img, e);
+        };
+        img.onmousemove = (e) => {
+          moveImagePreview(e);
+        };
+        img.onmouseleave = () => {
+          hideImagePreview();
+        };
+
         img.onclick = (e) => {
           e.stopPropagation();
           if (viewerImg && imageViewer) {
             viewerImg.src = node.img;
             imageViewer.style.display = 'flex';
+            hideImagePreview();
           }
         };
         contentEl.appendChild(img);
@@ -311,7 +323,7 @@ function saveCurrentNodes() {
   }
 }
 
-async function compressImage(dataUrl, maxWidth = 1200, maxHeight = 1200) {
+async function compressImage(dataUrl, maxWidth = 1600, maxHeight = 1600) {
   return new Promise((resolve) => {
     const img = new Image();
     img.onload = () => {
@@ -332,10 +344,51 @@ async function compressImage(dataUrl, maxWidth = 1200, maxHeight = 1200) {
       canvas.height = height;
       const ctx = canvas.getContext('2d');
       ctx.drawImage(img, 0, 0, width, height);
-      resolve(canvas.toDataURL('image/jpeg', 0.7));
+      // Quality increased to 0.9 as requested
+      resolve(canvas.toDataURL('image/jpeg', 0.9));
     };
     img.src = dataUrl;
   });
+}
+
+// Global Image Hover Preview Logic
+let previewEl = null;
+
+function showImagePreview(src, event) {
+  if (!previewEl) {
+    previewEl = document.createElement('div');
+    previewEl.className = 'image-hover-preview';
+    const img = document.createElement('img');
+    previewEl.appendChild(img);
+    document.body.appendChild(previewEl);
+  }
+  const img = previewEl.querySelector('img');
+  img.src = src;
+  previewEl.style.display = 'block';
+  moveImagePreview(event);
+}
+
+function moveImagePreview(event) {
+  if (!previewEl) return;
+  const padding = 20;
+  let x = event.clientX + padding;
+  let y = event.clientY + padding;
+
+  // Viewport constraints
+  const pw = previewEl.offsetWidth;
+  const ph = previewEl.offsetHeight;
+  const vw = window.innerWidth;
+  const vh = window.innerHeight;
+
+  if (x + pw > vw) x = event.clientX - pw - padding;
+  if (y + ph > vh) y = event.clientY - ph - padding;
+
+  previewEl.style.left = `${Math.max(0, x)}px`;
+  previewEl.style.top = `${Math.max(0, y)}px`;
+}
+
+function hideImagePreview() {
+  if (previewEl) previewEl.style.display = 'none';
 }
 
 function addNode(parentId = null) {
