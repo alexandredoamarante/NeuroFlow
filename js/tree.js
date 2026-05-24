@@ -26,6 +26,7 @@ let editingNodeId = null;
 let parentNodeId = null;
 
 function renderTree(nodes, container, taskId) {
+  if (container === treeContainer) window.currentNodes = nodes;
   container.innerHTML = '';
   if (nodes.length === 0 && container === treeContainer) {
     treeEmpty.style.display = 'block';
@@ -36,6 +37,7 @@ function renderTree(nodes, container, taskId) {
   nodes.forEach(node => {
     const nodeEl = document.createElement('div');
     nodeEl.className = 'tree-node';
+    nodeEl.setAttribute('data-node-id', node.id);
 
     const header = document.createElement('div');
     header.className = 'node-header';
@@ -106,7 +108,7 @@ function renderTree(nodes, container, taskId) {
       if (node.body) {
         const bodyText = document.createElement('div');
         bodyText.className = 'node-body-text';
-        renderSafeLinks(node.body, bodyText);
+        renderBodyWithHighlights(node, bodyText);
         contentEl.appendChild(bodyText);
       }
 
@@ -122,17 +124,61 @@ function renderTree(nodes, container, taskId) {
   });
 }
 
-function renderSafeLinks(text, container) {
-  container.innerHTML = '';
+function renderBodyWithHighlights(node, container) {
+    container.innerHTML = '';
+    let text = node.body || '';
+    let highlights = node.highlights || [];
+
+    // Sort highlights by start position
+    highlights.sort((a, b) => a.start - b.start);
+
+    let lastIndex = 0;
+    const fragment = document.createDocumentFragment();
+
+    highlights.forEach(h => {
+        if (h.start < lastIndex) return; // Skip overlapping
+
+        // Text before highlight
+        if (h.start > lastIndex) {
+            renderSafeLinks(text.substring(lastIndex, h.start), fragment, lastIndex);
+        }
+
+        // The highlight itself
+        const hSpan = document.createElement('span');
+        hSpan.className = 'note-highlight';
+        hSpan.setAttribute('data-highlight-id', h.id);
+        renderSafeLinks(text.substring(h.start, h.start + h.length), hSpan, h.start);
+        if (h.comment) {
+            hSpan.title = h.comment;
+            hSpan.classList.add('has-comment');
+        }
+        fragment.appendChild(hSpan);
+
+        lastIndex = h.start + h.length;
+    });
+
+    // Remaining text
+    if (lastIndex < text.length) {
+        renderSafeLinks(text.substring(lastIndex), fragment, lastIndex);
+    }
+
+    container.appendChild(fragment);
+}
+
+function renderSafeLinks(text, container, baseOffset = 0) {
   if (!text) return;
   const lines = text.split('\n');
-  lines.forEach(line => {
-    const lineDiv = document.createElement('div');
-    lineDiv.className = 'node-line';
+  let currentOffset = baseOffset;
+
+  lines.forEach((line, idx) => {
+    const lineSpan = document.createElement('span');
+    lineSpan.className = 'node-line-part';
+    lineSpan.setAttribute('data-source-start', currentOffset);
+    lineSpan.setAttribute('data-source-length', line.length);
     if (line.startsWith('>')) {
-      lineDiv.classList.add('greentext');
+      lineSpan.classList.add('greentext');
     } else if (line.startsWith('<')) {
-      lineDiv.classList.add('redtext');
+      lineSpan.classList.add('redtext');
     }
 
     const parts = line.split(/(\[\[.*?\]\])/g);
@@ -146,12 +192,17 @@ function renderSafeLinks(text, container) {
           e.stopPropagation();
           navigateToNodeByTitle(linkText);
         };
-        lineDiv.appendChild(span);
+        lineSpan.appendChild(span);
       } else {
-        lineDiv.appendChild(document.createTextNode(part));
+        lineSpan.appendChild(document.createTextNode(part));
       }
     });
-    container.appendChild(lineDiv);
+    container.appendChild(lineSpan);
+    if (idx < lines.length - 1) {
+        container.appendChild(document.createElement('br'));
+        currentOffset += 1; // for the \n
+    }
+    currentOffset += line.length;
   });
 }
 
@@ -495,3 +546,5 @@ imageViewer?.addEventListener('click', (e) => {
 window.addNode = addNode;
 window.editNode = editNode;
 window.deleteNode = deleteNode;
+window.findNode = findNode;
+window.renderTree = renderTree;

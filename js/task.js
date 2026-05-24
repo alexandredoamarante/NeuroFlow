@@ -17,16 +17,17 @@ const clearCompletedBtn = document.getElementById('clearCompletedBtn');
 let currentTask = null;
 
 function init() {
-  const urlParams = new URLSearchParams(window.location.search);
-  const id = urlParams.get('id');
-  currentTask = Storage.getTask(id);
+  try {
+    const urlParams = new URLSearchParams(window.location.search);
+    const id = urlParams.get('id');
+    currentTask = Storage.getTask(id);
 
-  if (!currentTask) {
-    window.location.href = 'index.html';
-    return;
-  }
+    if (!currentTask) {
+      window.location.href = 'index.html';
+      return;
+    }
 
-  taskPageTitle.textContent = currentTask.name;
+    taskPageTitle.textContent = currentTask.name || 'Tarefa sem nome';
   taskColorBar.style.backgroundColor = currentTask.color;
 
   // Init Timer
@@ -35,10 +36,14 @@ function init() {
   // Init Checklist
   renderChecklist();
 
-  // Init Tree
-  if (typeof renderTree === 'function') {
-    currentNodes = currentTask.nodes || [];
-    renderTree(currentNodes, document.getElementById('treeContainer'), currentTask.id);
+    // Init Tree
+    if (typeof renderTree === 'function') {
+      currentNodes = currentTask.nodes || [];
+      renderTree(currentNodes, document.getElementById('treeContainer'), currentTask.id);
+    }
+  } catch (err) {
+    console.error('Erro na inicialização da tarefa:', err);
+    taskPageTitle.textContent = 'Erro ao carregar';
   }
 }
 
