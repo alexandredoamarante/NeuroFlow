@@ -50,7 +50,11 @@ function renderTasks() {
 
     const desc = document.createElement('div');
     desc.className = 'task-card-desc';
-    desc.textContent = task.desc || 'Sem descrição';
+    if (typeof renderSafeLinks === 'function') {
+      renderSafeLinks(task.desc || 'Sem descrição', desc, true);
+    } else {
+      desc.textContent = task.desc || 'Sem descrição';
+    }
 
     const footer = document.createElement('div');
     footer.className = 'task-card-footer';

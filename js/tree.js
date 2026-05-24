@@ -29,15 +29,15 @@ function renderTree(nodes, container, taskId) {
   if (container === treeContainer) window.currentNodes = nodes;
   container.innerHTML = '';
   if (nodes.length === 0 && container === treeContainer) {
-    treeEmpty.style.display = 'block';
+    if (treeEmpty) treeEmpty.style.display = 'block';
     return;
   }
-  if (container === treeContainer) treeEmpty.style.display = 'none';
+  if (container === treeContainer && treeEmpty) treeEmpty.style.display = 'none';
 
   nodes.forEach(node => {
     const nodeEl = document.createElement('div');
     nodeEl.className = 'tree-node';
-    nodeEl.setAttribute('data-node-id', node.id);
+    nodeEl.dataset.id = node.id;
 
     const header = document.createElement('div');
     header.className = 'node-header';
@@ -48,7 +48,7 @@ function renderTree(nodes, container, taskId) {
 
     const title = document.createElement('div');
     title.className = 'node-title';
-    renderSafeLinks(node.text, title);
+    renderSafeLinks(node.text, title, false);
 
     const actions = document.createElement('div');
     actions.className = 'node-actions';
@@ -140,32 +140,36 @@ function renderBodyWithHighlights(node, container) {
 
         // Text before highlight
         if (h.start > lastIndex) {
-            renderSafeLinks(text.substring(lastIndex, h.start), fragment, lastIndex);
+            renderSafeLinks(text.substring(lastIndex, h.start), fragment, true, lastIndex);
         }
 
         // The highlight itself
         const hSpan = document.createElement('span');
         hSpan.className = 'note-highlight';
-        hSpan.setAttribute('data-highlight-id', h.id);
-        renderSafeLinks(text.substring(h.start, h.start + h.length), hSpan, h.start);
-        if (h.comment) {
-            hSpan.title = h.comment;
+        hSpan.dataset.id = h.id;
+        hSpan.dataset.noteId = node.id;
+        renderSafeLinks(text.substring(h.start, h.end), hSpan, true, h.start);
+        if (h.comments && h.comments.length > 0) {
             hSpan.classList.add('has-comment');
         }
         fragment.appendChild(hSpan);
 
-        lastIndex = h.start + h.length;
+        lastIndex = h.end;
     });
 
     // Remaining text
     if (lastIndex < text.length) {
-        renderSafeLinks(text.substring(lastIndex), fragment, lastIndex);
+        renderSafeLinks(text.substring(lastIndex), fragment, true, lastIndex);
     }
 
     container.appendChild(fragment);
 }
 
-function renderSafeLinks(text, container, baseOffset = 0) {
+const wikiRegex = /^\[\[.*?\]\]$/;
+const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
+const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
+
+function renderSafeLinks(text, container, applyColor = true, baseOffset = 0) {
   if (!text) return;
   const lines = text.split('\n');
   let currentOffset = baseOffset;
@@ -173,17 +177,18 @@ function renderSafeLinks(text, container, baseOffset = 0) {
   lines.forEach((line, idx) => {
     const lineSpan = document.createElement('span');
     lineSpan.className = 'node-line-part';
-    lineSpan.setAttribute('data-source-start', currentOffset);
-    lineSpan.setAttribute('data-source-length', line.length);
-    if (line.startsWith('>')) {
-      lineSpan.classList.add('greentext');
-    } else if (line.startsWith('<')) {
-      lineSpan.classList.add('redtext');
+    lineSpan.dataset.sourceStart = currentOffset;
+    lineSpan.dataset.sourceLength = line.length;
+
+    if (applyColor) {
+        if (line.startsWith('>')) lineSpan.classList.add('greentext');
+        else if (line.startsWith('<')) lineSpan.classList.add('redtext');
     }
 
-    const parts = line.split(/(\[\[.*?\]\])/g);
+    const parts = line.split(combinedRegex);
     parts.forEach(part => {
-      if (part.startsWith('[[') && part.endsWith(']]')) {
+      if (!part) return;
+      if (wikiRegex.test(part)) {
         const linkText = part.slice(2, -2);
         const span = document.createElement('span');
         span.className = 'node-link';
@@ -193,14 +198,29 @@ function renderSafeLinks(text, container, baseOffset = 0) {
           navigateToNodeByTitle(linkText);
         };
         lineSpan.appendChild(span);
+      } else if (urlRegex.test(part)) {
+        let href = part;
+        if (part.startsWith('www.')) href = 'http://' + part;
+        const a = document.createElement('a');
+        a.href = href;
+        a.className = 'node-link';
+        a.textContent = part;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.onclick = (e) => e.stopPropagation();
+        lineSpan.appendChild(a);
       } else {
         lineSpan.appendChild(document.createTextNode(part));
       }
     });
     container.appendChild(lineSpan);
     if (idx < lines.length - 1) {
-        container.appendChild(document.createElement('br'));
-        currentOffset += 1; // for the \n
+        const br = document.createElement('span');
+        br.textContent = '\n';
+        br.dataset.sourceStart = currentOffset + line.length;
+        br.dataset.sourceLength = 1;
+        container.appendChild(br);
+        currentOffset += 1;
     }
     currentOffset += line.length;
   });
@@ -209,13 +229,11 @@ function renderSafeLinks(text, container, baseOffset = 0) {
 function navigateToNodeByTitle(title) {
   const target = findNodeByTitle(currentNodes, title);
   if (target) {
-    // Expand parents and the target itself to show content
     expandParents(currentNodes, target.id);
     target.expanded = true;
     saveCurrentNodes();
     renderTree(currentNodes, treeContainer);
 
-    // Scroll and highlight
     setTimeout(() => {
       const els = document.querySelectorAll('.node-title');
       for (const el of els) {
@@ -279,7 +297,6 @@ async function compressImage(dataUrl, maxWidth = 1200, maxHeight = 1200) {
     img.onload = () => {
       let width = img.width;
       let height = img.height;
-
       if (width > maxWidth) {
         height *= maxWidth / width;
         width = maxWidth;
@@ -288,7 +305,6 @@ async function compressImage(dataUrl, maxWidth = 1200, maxHeight = 1200) {
         width *= maxHeight / height;
         height = maxHeight;
       }
-
       const canvas = document.createElement('canvas');
       canvas.width = width;
       canvas.height = height;
@@ -367,7 +383,6 @@ modalSave?.addEventListener('click', async () => {
 
   if (!text.trim() && !body.trim() && !img) return;
 
-  // Sync currentNodes from storage before saving to avoid losing other changes
   const taskId = new URLSearchParams(window.location.search).get('id');
   const task = Storage.getTask(taskId);
   if (task) currentNodes = task.nodes || [];
@@ -386,7 +401,8 @@ modalSave?.addEventListener('click', async () => {
       body,
       img,
       expanded: true,
-      children: []
+      children: [],
+      highlights: []
     };
     if (parentNodeId) {
       const parent = findNode(currentNodes, parentNodeId);
@@ -395,7 +411,6 @@ modalSave?.addEventListener('click', async () => {
         parent.children.push(newNode);
         parent.expanded = true;
       } else {
-        // Fallback to root if parent not found for some reason
         currentNodes.push(newNode);
       }
     } else {
@@ -435,8 +450,6 @@ nodeImgUrl?.addEventListener('input', async () => {
   const val = nodeImgUrl.value.trim();
   if (val) {
     if (val.startsWith('http')) {
-      // For URLs, we try to compress if it's a data URL, otherwise we just show it
-      // But usually user pastes external URL. We can't compress external URLs easily due to CORS
       nodeImgPreview.src = val;
       nodeImgPreview.style.display = 'block';
       nodeImgClear.style.display = 'block';
@@ -472,12 +485,10 @@ fmtClearBtn?.addEventListener('click', () => {
   const before = text.substring(0, start);
   const selected = text.substring(start, end);
   const after = text.substring(end);
-
   const uncolored = selected.split('\n').map(line => {
     if (line.startsWith('>') || line.startsWith('<')) return line.substring(1).trimStart();
     return line;
   }).join('\n');
-
   nodeBodyInput.value = before + uncolored + after;
   nodeBodyInput.focus();
 });
@@ -486,33 +497,25 @@ function applyMarker(marker) {
   const start = nodeBodyInput.selectionStart;
   const end = nodeBodyInput.selectionEnd;
   const text = nodeBodyInput.value;
-
   if (start === end) {
     const linesBefore = text.substring(0, start).split('\n');
     const currentLineIndex = linesBefore.length - 1;
     const allLines = text.split('\n');
     let line = allLines[currentLineIndex];
-
-    if (line.startsWith(marker)) {
-      // already has it
-    } else if (line.startsWith('>') || line.startsWith('<')) {
-      allLines[currentLineIndex] = marker + line.substring(1);
-    } else {
-      allLines[currentLineIndex] = marker + line;
-    }
+    if (line.startsWith(marker)) {}
+    else if (line.startsWith('>') || line.startsWith('<')) allLines[currentLineIndex] = marker + line.substring(1);
+    else allLines[currentLineIndex] = marker + line;
     nodeBodyInput.value = allLines.join('\n');
   } else {
     const before = text.substring(0, start);
     const selected = text.substring(start, end);
     const after = text.substring(end);
-
     const lines = selected.split('\n');
     const marked = lines.map(line => {
       if (line.startsWith(marker)) return line;
       if (line.startsWith('>') || line.startsWith('<')) return marker + line.substring(1);
       return marker + line;
     }).join('\n');
-
     nodeBodyInput.value = before + marked + after;
   }
   nodeBodyInput.focus();
