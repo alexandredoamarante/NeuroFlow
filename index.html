@@ -43,6 +43,13 @@
       <span class="brand-name">NeuroFlow</span>
     </div>
     <div class="header-right">
+      <button class="lg-btn ghost sm" id="infoToggle" title="Guia de formatação">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="10"></circle>
+          <line x1="12" y1="16" x2="12" y2="12"></line>
+          <line x1="12" y1="8" x2="12.01" y2="8"></line>
+        </svg>
+      </button>
       <button class="lg-btn ghost sm theme-toggle" id="themeToggle" title="Alternar tema">
         <svg class="icon-moon" viewBox="0 0 20 20" fill="none">
           <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" fill="currentColor"/>
@@ -95,6 +102,24 @@
       </div>
     </div>
   </section>
+
+  <!-- Info Modal -->
+  <div class="modal-overlay" id="infoModal" style="display:none">
+    <div class="glass modal-panel">
+      <h3 class="panel-title">Guia de Formatação</h3>
+      <div class="modal-text">
+        <div style="display: flex; flex-direction: column; gap: 1rem;">
+          <div><strong>> Greentext</strong><br><span style="font-size: 0.8rem; color: var(--text-dim);">Linhas começando com "> " ficam verdes e monoespaçadas.</span></div>
+          <div><strong>< Redtext</strong><br><span style="font-size: 0.8rem; color: var(--text-dim);">Linhas começando com "< " ficam vermelhas e monoespaçadas.</span></div>
+          <div><strong>[[Wikilinks]]</strong><br><span style="font-size: 0.8rem; color: var(--text-dim);">Use [[Título de outra nota]] para criar conexões rápidas.</span></div>
+          <div><strong>Marcar Texto</strong><br><span style="font-size: 0.8rem; color: var(--text-dim);">Selecione texto na nota salva para adicionar destaques e comentários coloridos.</span></div>
+        </div>
+      </div>
+      <div class="modal-actions">
+        <button class="lg-btn primary sm" id="infoClose">Entendi</button>
+      </div>
+    </div>
+  </div>
 
   <!-- Task List -->
   <section class="tasks-section">
