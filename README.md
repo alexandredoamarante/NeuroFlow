@@ -16,11 +16,11 @@ Uma ferramenta centralizada de organização e foco que une anotações hierárq
 *   **Conexões [[Wikilinks]]:** Crie links entre notas usando o formato `[[Título da Nota]]` para navegação rápida.
 *   **Estilização de Texto:** Suporte para **Greentext** (linhas começando com `>`) e **Redtext** (linhas começando com `<`) para destaque visual.
 
-### 2. Marca-texto e Comentários Inline
-*   **Destaque Persistente:** Selecione qualquer trecho de texto em uma nota renderizada para criar um destaque (highlight) permanente.
-*   **Comentários Inline:** Clique em um destaque para abrir um painel de comentários. Adicione, edite ou exclua observações contextuais.
-*   **Sem Limites:** Comentários suportam múltiplas linhas (textarea) e não possuem limite de caracteres, com barras de rolagem inteligentes para textos longos.
-*   **Comandos de Escrita:** No campo de comentários, use `Enter` para enviar e `Shift + Enter` para quebrar linha.
+### 2. Marca-texto e Nota Técnica
+*   **Destaque Personalizado:** Selecione qualquer trecho de texto em uma nota renderizada para criar um destaque (highlight). Escolha entre 5 cores diferentes para organizar seus pensamentos.
+*   **Nota Técnica Única:** Clique em um destaque para abrir um painel lateral. Cada marcação suporta uma nota técnica detalhada com suporte a links clicáveis.
+*   **Foco na Leitura:** O painel de comentários possui rolagem interna inteligente, permitindo anotações extensas sem quebrar o layout ou a hierarquia visual.
+*   **Comandos de Escrita:** No campo de texto, use `Enter` para salvar e `Shift + Enter` para quebrar linha.
 
 ### 3. Gestão de Foco e Tempo
 *   **Timer Pomodoro:** Cronômetro integrado para sessões de trabalho focado, com ciclos personalizáveis.
