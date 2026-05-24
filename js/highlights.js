@@ -43,7 +43,7 @@ const Highlights = {
         </div>
         <div class="popover-list" id="popoverList"></div>
         <div class="popover-input-row">
-          <input type="text" id="popoverInput" placeholder="Adicionar comentário..." autocomplete="off">
+          <textarea id="popoverInput" placeholder="Adicionar comentário..." rows="1"></textarea>
           <button id="popoverAdd">Enviar</button>
         </div>
       </div>
@@ -59,7 +59,10 @@ const Highlights = {
 
     popover.querySelector('#popoverAdd').onclick = () => this.addComment();
     popover.querySelector('#popoverInput').onkeypress = (e) => {
-      if (e.key === 'Enter') this.addComment();
+      if (e.key === 'Enter' && !e.shiftKey) {
+        e.preventDefault();
+        this.addComment();
+      }
     };
   },
 
