@@ -663,7 +663,8 @@
   height: 100%;
   background: rgba(0, 0, 0, 0.6);
   backdrop-filter: blur(5px);
-  z-index: 100;
+  -webkit-backdrop-filter: blur(5px);
+  z-index: 2000;
   display: flex;
   align-items: center;
   justify-content: center;
@@ -677,6 +678,7 @@
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
+  position: relative;
 }
 
 .modal-panel.small {
