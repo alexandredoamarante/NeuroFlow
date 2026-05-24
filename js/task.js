@@ -39,6 +39,11 @@ function init() {
     currentNodes = currentTask.nodes || [];
     renderTree(currentNodes, document.getElementById('treeContainer'), currentTask.id);
   }
+
+  // Init Highlights
+  if (typeof Highlights !== 'undefined') {
+    Highlights.init();
+  }
 }
 
 // Checklist
