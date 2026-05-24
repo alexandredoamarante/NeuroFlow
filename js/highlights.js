@@ -37,6 +37,7 @@ const Highlights = {
     popover.innerHTML = `
       <div class="popover-content">
         <div class="popover-header">
+          <button class="popover-unmark" id="popoverUnmark">Desmarcar</button>
           <span>Comentários</span>
           <button class="popover-close">×</button>
         </div>
@@ -53,6 +54,8 @@ const Highlights = {
     popover.querySelector('.popover-close').onclick = () => {
       this.popover.style.display = 'none';
     };
+
+    popover.querySelector('#popoverUnmark').onclick = () => this.removeHighlight();
 
     popover.querySelector('#popoverAdd').onclick = () => this.addComment();
     popover.querySelector('#popoverInput').onkeypress = (e) => {
@@ -93,10 +96,13 @@ const Highlights = {
       }
     });
 
-    // Close floating button on click elsewhere
-    document.addEventListener('mousedown', (e) => {
-      if (!e.target.closest('.highlight-float-btn') && !window.getSelection().toString()) {
+    // Close floating button on click elsewhere within the container
+    container.addEventListener('mousedown', (e) => {
+      if (!e.target.closest('.highlight-float-btn') && !e.target.closest('.note-highlight') && !e.target.closest('.highlight-popover')) {
         this.floatingBtn.style.display = 'none';
+        if (!window.getSelection().toString()) {
+           this.popover.style.display = 'none';
+        }
       }
     });
   },
@@ -184,8 +190,17 @@ const Highlights = {
 
   showFloatingBtn(rect) {
     this.floatingBtn.style.display = 'flex';
-    this.floatingBtn.style.top = `${window.scrollY + rect.top - 40}px`;
-    this.floatingBtn.style.left = `${window.scrollX + rect.left + rect.width / 2 - 15}px`;
+
+    let top = window.scrollY + rect.top - 45;
+    let left = window.scrollX + rect.left + rect.width / 2 - 17;
+
+    // Viewport boundaries
+    if (top < window.scrollY + 10) top = window.scrollY + rect.bottom + 10;
+    if (left < 10) left = 10;
+    if (left + 40 > window.innerWidth) left = window.innerWidth - 50;
+
+    this.floatingBtn.style.top = `${top}px`;
+    this.floatingBtn.style.left = `${left}px`;
   },
 
   async createHighlight() {
@@ -255,13 +270,21 @@ const Highlights = {
     const rect = el.getBoundingClientRect();
     this.popover.style.display = 'block';
 
+    const popHeight = this.popover.offsetHeight;
+    const popWidth = this.popover.offsetWidth;
+
     // Position intelligently
     let top = window.scrollY + rect.bottom + 10;
-    let left = window.scrollX + rect.left;
+    let left = window.scrollX + rect.left + rect.width / 2 - popWidth / 2;
 
     // Boundary checks
-    if (left + 300 > window.innerWidth) left = window.innerWidth - 320;
-    if (top + 200 > window.scrollY + window.innerHeight) top = window.scrollY + rect.top - 210;
+    if (left + popWidth > window.innerWidth - 10) left = window.innerWidth - popWidth - 10;
+    if (left < 10) left = 10;
+
+    if (top + popHeight > window.scrollY + window.innerHeight - 10) {
+      top = window.scrollY + rect.top - popHeight - 10;
+    }
+    if (top < window.scrollY + 10) top = window.scrollY + 10;
 
     this.popover.style.top = `${top}px`;
     this.popover.style.left = `${left}px`;
@@ -285,13 +308,24 @@ const Highlights = {
       const dateSpan = document.createElement('span');
       dateSpan.textContent = new Date(c.date).toLocaleString();
 
+      const actionsDiv = document.createElement('div');
+      actionsDiv.className = 'comment-actions';
+
+      const editBtn = document.createElement('button');
+      editBtn.className = 'comment-edit';
+      editBtn.textContent = 'Editar';
+      editBtn.onclick = () => this.editComment(idx);
+
       const delBtn = document.createElement('button');
       delBtn.className = 'comment-del';
       delBtn.textContent = 'Excluir';
       delBtn.onclick = () => this.deleteComment(idx);
 
+      actionsDiv.appendChild(editBtn);
+      actionsDiv.appendChild(delBtn);
+
       metaDiv.appendChild(dateSpan);
-      metaDiv.appendChild(delBtn);
+      metaDiv.appendChild(actionsDiv);
 
       item.appendChild(textDiv);
       item.appendChild(metaDiv);
@@ -325,6 +359,34 @@ const Highlights = {
     this.activeHighlight.highlight.comments.splice(idx, 1);
     Storage.saveTask(this.activeHighlight.task);
     this.renderComments();
+  },
+
+  editComment(idx) {
+    const comment = this.activeHighlight.highlight.comments[idx];
+    const newText = prompt('Editar comentário:', comment.text);
+    if (newText !== null && newText.trim() !== '') {
+      comment.text = newText.trim();
+      comment.date = new Date().toISOString();
+      Storage.saveTask(this.activeHighlight.task);
+      this.renderComments();
+    }
+  },
+
+  removeHighlight() {
+    if (!confirm('Deseja remover este destaque e todos os seus comentários?')) return;
+
+    const { node, highlight, task } = this.activeHighlight;
+    node.highlights = node.highlights.filter(h => h.id !== highlight.id);
+    Storage.saveTask(task);
+
+    this.popover.style.display = 'none';
+
+    // Re-render the tree
+    const taskId = new URLSearchParams(window.location.search).get('id');
+    if (typeof renderTree === 'function') {
+      currentNodes = task.nodes;
+      renderTree(currentNodes, document.getElementById('treeContainer'), taskId);
+    }
   }
 };
 
