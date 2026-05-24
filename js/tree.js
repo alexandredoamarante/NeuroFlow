@@ -128,44 +128,59 @@ function renderSafeLinks(text, container, applyColor = true, highlights = [], no
   container.innerHTML = '';
   if (!text) return;
 
-  // First, if there are highlights, we need to process the text to inject highlight spans.
-  // We'll work with the plain text first, then apply links/greentext within the segments.
+  // Normalize all line endings to \n for consistent offset calculation
+  const normalizedText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
   if (highlights && highlights.length > 0 && applyColor) {
-    renderWithHighlights(text, container, highlights, noteId);
+    renderWithHighlights(normalizedText, container, highlights, noteId);
   } else {
-    renderNormal(text, container, applyColor);
+    renderNormal(normalizedText, container, applyColor);
   }
 }
 
-function renderNormal(text, container, applyColor) {
-  const lines = text.split(/\r?\n/);
+function renderNormal(text, container, applyColor, baseOffset = 0) {
+  const lines = text.split('\n');
+  let currentOffset = baseOffset;
+
   lines.forEach((line, index) => {
     const isGreen = applyColor && line.startsWith('>');
     const isRed = applyColor && line.startsWith('<');
 
+    let target = container;
     if (isGreen || isRed) {
       const lineSpan = document.createElement('span');
       lineSpan.className = isGreen ? 'greentext' : 'redtext';
-      lineSpan.style.display = 'block';
-      renderLinksInLine(line, lineSpan);
       container.appendChild(lineSpan);
-    } else {
-      renderLinksInLine(line, container);
-      if (index < lines.length - 1) {
-        container.appendChild(document.createTextNode('\n'));
-      }
+      target = lineSpan;
+    }
+
+    renderLinksInLine(line, target, currentOffset);
+    currentOffset += line.length;
+
+    if (index < lines.length - 1) {
+      const br = document.createElement('span');
+      br.textContent = '\n';
+      br.dataset.sourceStart = currentOffset;
+      br.dataset.sourceLength = 1;
+      container.appendChild(br);
+      currentOffset += 1; // \n
     }
   });
 }
 
-function renderLinksInLine(line, container) {
+function renderLinksInLine(line, container, baseOffset) {
   if (!line) return;
   const parts = line.split(combinedRegex);
+  let currentOffset = baseOffset;
+
   parts.forEach(part => {
     if (!part) return;
+    const span = document.createElement('span');
+    span.dataset.sourceStart = currentOffset;
+    span.dataset.sourceLength = part.length;
+
     if (wikiRegex.test(part)) {
       const linkText = part.slice(2, -2);
-      const span = document.createElement('span');
       span.className = 'node-link';
       span.textContent = linkText;
       span.onclick = (e) => {
@@ -183,10 +198,13 @@ function renderLinksInLine(line, container) {
       a.target = '_blank';
       a.rel = 'noopener noreferrer';
       a.onclick = (e) => e.stopPropagation();
-      container.appendChild(a);
+      span.appendChild(a);
+      container.appendChild(span);
     } else {
-      container.appendChild(document.createTextNode(part));
+      span.textContent = part;
+      container.appendChild(span);
     }
+    currentOffset += part.length;
   });
 }
 
@@ -195,12 +213,11 @@ function renderWithHighlights(text, container, highlights, noteId) {
   const sorted = [...highlights].sort((a, b) => a.start - b.start);
 
   let currentPos = 0;
-  const plainText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
 
   sorted.forEach(h => {
     if (h.start > currentPos) {
-      const segment = plainText.substring(currentPos, h.start);
-      renderNormal(segment, container, true);
+      const segment = text.substring(currentPos, h.start);
+      renderNormal(segment, container, true, currentPos);
     }
 
     if (h.start >= currentPos) {
@@ -208,18 +225,18 @@ function renderWithHighlights(text, container, highlights, noteId) {
       highlightSpan.className = 'note-highlight';
       highlightSpan.dataset.id = h.id;
       highlightSpan.dataset.noteId = noteId;
-
-      const segment = plainText.substring(h.start, h.end);
-      renderNormal(segment, highlightSpan, true);
+      // We still want to track source within highlights
+      const segment = text.substring(h.start, h.end);
+      renderNormal(segment, highlightSpan, true, h.start);
 
       container.appendChild(highlightSpan);
       currentPos = h.end;
     }
   });
 
-  if (currentPos < plainText.length) {
-    const segment = plainText.substring(currentPos);
-    renderNormal(segment, container, true);
+  if (currentPos < text.length) {
+    const segment = text.substring(currentPos);
+    renderNormal(segment, container, true, currentPos);
   }
 }
 
