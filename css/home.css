@@ -128,10 +128,8 @@
   font-size: 0.85rem;
   color: var(--text-dim);
   line-height: 1.4;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
 
 .task-card-footer {

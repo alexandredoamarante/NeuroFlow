@@ -19,16 +19,18 @@ let editingNodeId = null;
 let parentNodeId = null;
 
 function renderTree(nodes, container, taskId) {
+  if (!container) return;
   container.innerHTML = '';
   if (nodes.length === 0 && container === treeContainer) {
-    treeEmpty.style.display = 'block';
+    if (treeEmpty) treeEmpty.style.display = 'block';
     return;
   }
-  if (container === treeContainer) treeEmpty.style.display = 'none';
+  if (container === treeContainer && treeEmpty) treeEmpty.style.display = 'none';
 
   nodes.forEach(node => {
     const nodeEl = document.createElement('div');
     nodeEl.className = 'tree-node';
+    nodeEl.dataset.id = node.id;
 
     const header = document.createElement('div');
     header.className = 'node-header';
@@ -75,7 +77,7 @@ function renderTree(nodes, container, taskId) {
     header.onclick = () => {
       node.expanded = !node.expanded;
       saveCurrentNodes();
-      renderTree(currentNodes, treeContainer, taskId);
+      renderTree(currentNodes, container.closest('#treeContainer') || treeContainer, taskId);
     };
 
     nodeEl.appendChild(header);
@@ -91,8 +93,10 @@ function renderTree(nodes, container, taskId) {
         img.className = 'node-img';
         img.onclick = (e) => {
           e.stopPropagation();
-          viewerImg.src = node.img;
-          imageViewer.style.display = 'flex';
+          if (viewerImg && imageViewer) {
+            viewerImg.src = node.img;
+            imageViewer.style.display = 'flex';
+          }
         };
         contentEl.appendChild(img);
       }
@@ -100,7 +104,7 @@ function renderTree(nodes, container, taskId) {
       if (node.body) {
         const bodyText = document.createElement('div');
         bodyText.className = 'node-body-text';
-        renderSafeLinks(node.body, bodyText);
+        renderSafeLinks(node.body, bodyText, true, node.highlights, node.id);
         contentEl.appendChild(bodyText);
       }
 
@@ -120,61 +124,103 @@ const wikiRegex = /^\[\[.*?\]\]$/;
 const urlRegex = /^(https?:\/\/[^\s]+|www\.[^\s]+)$/;
 const combinedRegex = /(\[\[.*?\]\]|https?:\/\/[^\s]+|www\.[^\s]+)/g;
 
-function renderSafeLinks(text, container, applyColor = true) {
+function renderSafeLinks(text, container, applyColor = true, highlights = [], noteId = null) {
   container.innerHTML = '';
   if (!text) return;
 
-  const lines = text.replace(/\r/g, '').split('\n');
+  // First, if there are highlights, we need to process the text to inject highlight spans.
+  // We'll work with the plain text first, then apply links/greentext within the segments.
+  if (highlights && highlights.length > 0 && applyColor) {
+    renderWithHighlights(text, container, highlights, noteId);
+  } else {
+    renderNormal(text, container, applyColor);
+  }
+}
 
+function renderNormal(text, container, applyColor) {
+  const lines = text.split(/\r?\n/);
   lines.forEach((line, index) => {
-    let target = container;
+    const isGreen = applyColor && line.startsWith('>');
+    const isRed = applyColor && line.startsWith('<');
 
-    if (applyColor && line.startsWith('>')) {
-      const span = document.createElement('span');
-      span.className = 'greentext';
-      container.appendChild(span);
-      target = span;
-    } else if (applyColor && line.startsWith('<')) {
-      const span = document.createElement('span');
-      span.className = 'redtext';
-      container.appendChild(span);
-      target = span;
-    }
-
-    const parts = line.split(combinedRegex);
-    parts.forEach(part => {
-      if (!part) return;
-
-      if (wikiRegex.test(part)) {
-        const linkText = part.slice(2, -2);
-        const span = document.createElement('span');
-        span.className = 'node-link';
-        span.textContent = linkText;
-        span.onclick = (e) => {
-          e.stopPropagation();
-          navigateToNodeByTitle(linkText);
-        };
-        target.appendChild(span);
-      } else if (urlRegex.test(part)) {
-        let href = part;
-        if (part.startsWith('www.')) href = 'http://' + part;
-        const a = document.createElement('a');
-        a.href = href;
-        a.className = 'node-link';
-        a.textContent = part;
-        a.target = '_blank';
-        a.rel = 'noopener noreferrer';
-        a.onclick = (e) => e.stopPropagation();
-        target.appendChild(a);
-      } else {
-        target.appendChild(document.createTextNode(part));
+    if (isGreen || isRed) {
+      const lineSpan = document.createElement('span');
+      lineSpan.className = isGreen ? 'greentext' : 'redtext';
+      lineSpan.style.display = 'block';
+      renderLinksInLine(line, lineSpan);
+      container.appendChild(lineSpan);
+    } else {
+      renderLinksInLine(line, container);
+      if (index < lines.length - 1) {
+        container.appendChild(document.createTextNode('\n'));
       }
-    });
-
-    if (index < lines.length - 1) {
-      container.appendChild(document.createTextNode('\n'));
     }
   });
+}
+
+function renderLinksInLine(line, container) {
+  if (!line) return;
+  const parts = line.split(combinedRegex);
+  parts.forEach(part => {
+    if (!part) return;
+    if (wikiRegex.test(part)) {
+      const linkText = part.slice(2, -2);
+      const span = document.createElement('span');
+      span.className = 'node-link';
+      span.textContent = linkText;
+      span.onclick = (e) => {
+        e.stopPropagation();
+        navigateToNodeByTitle(linkText);
+      };
+      container.appendChild(span);
+    } else if (urlRegex.test(part)) {
+      let href = part;
+      if (part.startsWith('www.')) href = 'http://' + part;
+      const a = document.createElement('a');
+      a.href = href;
+      a.className = 'node-link';
+      a.textContent = part;
+      a.target = '_blank';
+      a.rel = 'noopener noreferrer';
+      a.onclick = (e) => e.stopPropagation();
+      container.appendChild(a);
+    } else {
+      container.appendChild(document.createTextNode(part));
+    }
+  });
+}
+
+function renderWithHighlights(text, container, highlights, noteId) {
+  // Sort highlights by start offset
+  const sorted = [...highlights].sort((a, b) => a.start - b.start);
+
+  let currentPos = 0;
+  const plainText = text.replace(/\r\n/g, '\n').replace(/\r/g, '\n');
+
+  sorted.forEach(h => {
+    if (h.start > currentPos) {
+      const segment = plainText.substring(currentPos, h.start);
+      renderNormal(segment, container, true);
+    }
+
+    if (h.start >= currentPos) {
+      const highlightSpan = document.createElement('span');
+      highlightSpan.className = 'note-highlight';
+      highlightSpan.dataset.id = h.id;
+      highlightSpan.dataset.noteId = noteId;
+
+      const segment = plainText.substring(h.start, h.end);
+      renderNormal(segment, highlightSpan, true);
+
+      container.appendChild(highlightSpan);
+      currentPos = h.end;
+    }
+  });
+
+  if (currentPos < plainText.length) {
+    const segment = plainText.substring(currentPos);
+    renderNormal(segment, container, true);
+  }
 }
 
 function navigateToNodeByTitle(title) {
