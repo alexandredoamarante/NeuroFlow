@@ -13,6 +13,13 @@ const imageViewer = document.getElementById('imageViewer');
 const viewerImg = document.getElementById('viewerImg');
 const modalSave = document.getElementById('modalSave');
 const modalCancel = document.getElementById('modalCancel');
+const modalDelete = document.getElementById('modalDelete');
+
+const clearTitleBtn = document.getElementById('clearTitleBtn');
+const clearBodyBtn = document.getElementById('clearBodyBtn');
+const fmtGreenBtn = document.getElementById('fmtGreenBtn');
+const fmtRedBtn = document.getElementById('fmtRedBtn');
+const fmtClearBtn = document.getElementById('fmtClearBtn');
 
 let currentNodes = [];
 let editingNodeId = null;
@@ -46,17 +53,17 @@ function renderTree(nodes, container, taskId) {
 
     const addBtn = document.createElement('button');
     addBtn.className = 'lg-btn ghost sm';
-    addBtn.textContent = '+';
+    addBtn.innerHTML = '<svg viewBox="0 0 20 20" fill="none" style="width:14px;height:14px;"><path d="M10 4v12M4 10h12" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
     addBtn.onclick = (e) => { e.stopPropagation(); addNode(node.id); };
 
     const editBtn = document.createElement('button');
     editBtn.className = 'lg-btn ghost sm';
-    editBtn.textContent = '✎';
+    editBtn.innerHTML = '<svg viewBox="0 0 20 20" fill="none" style="width:14px;height:14px;"><path d="M13.586 3.586a2 2 0 112.828 2.828l-.793.793-2.828-2.828.793-.793zM11.379 5.793L3 14.172V17h2.828l8.38-8.379-2.83-2.828z" fill="currentColor"/></svg>';
     editBtn.onclick = (e) => { e.stopPropagation(); editNode(node.id); };
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'lg-btn ghost sm';
-    delBtn.textContent = '×';
+    delBtn.className = 'lg-btn ghost sm danger';
+    delBtn.innerHTML = '<svg viewBox="0 0 20 20" fill="none" style="width:14px;height:14px;"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
     delBtn.onclick = (e) => { e.stopPropagation(); deleteNode(node.id); };
 
     actions.appendChild(addBtn);
@@ -117,21 +124,34 @@ function renderTree(nodes, container, taskId) {
 
 function renderSafeLinks(text, container) {
   container.innerHTML = '';
-  const parts = text.split(/(\[\[.*?\]\])/g);
-  parts.forEach(part => {
-    if (part.startsWith('[[') && part.endsWith(']]')) {
-      const linkText = part.slice(2, -2);
-      const span = document.createElement('span');
-      span.className = 'node-link';
-      span.textContent = linkText;
-      span.onclick = (e) => {
-        e.stopPropagation();
-        navigateToNodeByTitle(linkText);
-      };
-      container.appendChild(span);
-    } else {
-      container.appendChild(document.createTextNode(part));
+  if (!text) return;
+  const lines = text.split('\n');
+  lines.forEach(line => {
+    const lineDiv = document.createElement('div');
+    lineDiv.className = 'node-line';
+    if (line.startsWith('>')) {
+      lineDiv.classList.add('greentext');
+    } else if (line.startsWith('<')) {
+      lineDiv.classList.add('redtext');
     }
+
+    const parts = line.split(/(\[\[.*?\]\])/g);
+    parts.forEach(part => {
+      if (part.startsWith('[[') && part.endsWith(']]')) {
+        const linkText = part.slice(2, -2);
+        const span = document.createElement('span');
+        span.className = 'node-link';
+        span.textContent = linkText;
+        span.onclick = (e) => {
+          e.stopPropagation();
+          navigateToNodeByTitle(linkText);
+        };
+        lineDiv.appendChild(span);
+      } else {
+        lineDiv.appendChild(document.createTextNode(part));
+      }
+    });
+    container.appendChild(lineDiv);
   });
 }
 
@@ -239,6 +259,7 @@ function addNode(parentId = null) {
   nodeImgPreview.src = '';
   nodeImgPreview.style.display = 'none';
   nodeImgClear.style.display = 'none';
+  modalDelete.style.display = 'none';
   nodeModal.style.display = 'flex';
   nodeModal.querySelector('#modalTitle').textContent = 'Nova anotação';
 }
@@ -257,6 +278,7 @@ function editNode(id) {
     nodeImgPreview.style.display = 'none';
     nodeImgClear.style.display = 'none';
   }
+  modalDelete.style.display = 'block';
   nodeModal.style.display = 'flex';
   nodeModal.querySelector('#modalTitle').textContent = 'Editar anotação';
 }
@@ -273,6 +295,7 @@ function findNode(nodes, id) {
 }
 
 function deleteNode(id) {
+  if (!confirm('Excluir esta anotação e todas as suas sub-notas?')) return;
   currentNodes = removeNode(currentNodes, id);
   saveCurrentNodes();
   renderTree(currentNodes, treeContainer);
@@ -287,11 +310,11 @@ function removeNode(nodes, id) {
 }
 
 modalSave?.addEventListener('click', async () => {
-  const text = nodeTextInput.value.trim();
-  const body = nodeBodyInput.value.trim();
+  const text = nodeTextInput.value;
+  const body = nodeBodyInput.value;
   const img = nodeImgUrl.value.trim();
 
-  if (!text && !body && !img) return;
+  if (!text.trim() && !body.trim() && !img) return;
 
   // Sync currentNodes from storage before saving to avoid losing other changes
   const taskId = new URLSearchParams(window.location.search).get('id');
@@ -301,14 +324,14 @@ modalSave?.addEventListener('click', async () => {
   if (editingNodeId) {
     const node = findNode(currentNodes, editingNodeId);
     if (node) {
-      node.text = text || '(Sem título)';
+      node.text = text;
       node.body = body;
       node.img = img;
     }
   } else {
     const newNode = {
       id: Date.now().toString(),
-      text: text || '(Sem título)',
+      text: text,
       body,
       img,
       expanded: true,
@@ -335,6 +358,13 @@ modalSave?.addEventListener('click', async () => {
 });
 
 modalCancel?.addEventListener('click', () => nodeModal.style.display = 'none');
+
+modalDelete?.addEventListener('click', () => {
+  if (editingNodeId && confirm('Excluir esta anotação e todas as suas sub-notas?')) {
+    deleteNode(editingNodeId);
+    nodeModal.style.display = 'none';
+  }
+});
 
 nodeImgFile?.addEventListener('change', (e) => {
   const file = e.target.files[0];
@@ -378,6 +408,64 @@ nodeImgClear?.addEventListener('click', () => {
   nodeImgPreview.style.display = 'none';
   nodeImgClear.style.display = 'none';
 });
+
+clearTitleBtn?.addEventListener('click', () => { nodeTextInput.value = ''; nodeTextInput.focus(); });
+clearBodyBtn?.addEventListener('click', () => { nodeBodyInput.value = ''; nodeBodyInput.focus(); });
+
+fmtGreenBtn?.addEventListener('click', () => applyMarker('>'));
+fmtRedBtn?.addEventListener('click', () => applyMarker('<'));
+fmtClearBtn?.addEventListener('click', () => {
+  const start = nodeBodyInput.selectionStart;
+  const end = nodeBodyInput.selectionEnd;
+  const text = nodeBodyInput.value;
+  const before = text.substring(0, start);
+  const selected = text.substring(start, end);
+  const after = text.substring(end);
+
+  const uncolored = selected.split('\n').map(line => {
+    if (line.startsWith('>') || line.startsWith('<')) return line.substring(1).trimStart();
+    return line;
+  }).join('\n');
+
+  nodeBodyInput.value = before + uncolored + after;
+  nodeBodyInput.focus();
+});
+
+function applyMarker(marker) {
+  const start = nodeBodyInput.selectionStart;
+  const end = nodeBodyInput.selectionEnd;
+  const text = nodeBodyInput.value;
+
+  if (start === end) {
+    const linesBefore = text.substring(0, start).split('\n');
+    const currentLineIndex = linesBefore.length - 1;
+    const allLines = text.split('\n');
+    let line = allLines[currentLineIndex];
+
+    if (line.startsWith(marker)) {
+      // already has it
+    } else if (line.startsWith('>') || line.startsWith('<')) {
+      allLines[currentLineIndex] = marker + line.substring(1);
+    } else {
+      allLines[currentLineIndex] = marker + line;
+    }
+    nodeBodyInput.value = allLines.join('\n');
+  } else {
+    const before = text.substring(0, start);
+    const selected = text.substring(start, end);
+    const after = text.substring(end);
+
+    const lines = selected.split('\n');
+    const marked = lines.map(line => {
+      if (line.startsWith(marker)) return line;
+      if (line.startsWith('>') || line.startsWith('<')) return marker + line.substring(1);
+      return marker + line;
+    }).join('\n');
+
+    nodeBodyInput.value = before + marked + after;
+  }
+  nodeBodyInput.focus();
+}
 
 function setAllExpanded(nodes, state) {
   nodes.forEach(n => {

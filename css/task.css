@@ -179,46 +179,63 @@
 .checklist {
   list-style: none;
   margin-bottom: 1.5rem;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 5px;
 }
 
 .check-item {
   display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 8px 0;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
+  align-items: flex-start;
+  gap: 8px;
+  padding: 6px 4px;
+  border-radius: var(--radius-sm);
+  transition: background 0.2s;
 }
 
-.check-item:last-child {
-  border-bottom: none;
+.check-item:hover {
+  background: rgba(255, 255, 255, 0.03);
 }
 
 .check-cb {
   width: 18px;
   height: 18px;
-  border: 1px solid var(--glass-border);
-  border-radius: 4px;
+  min-width: 18px;
+  border: 2px solid var(--glass-border);
+  border-radius: 5px;
+  background: rgba(255, 255, 255, 0.05);
   cursor: pointer;
   display: flex;
   align-items: center;
   justify-content: center;
-  transition: all 0.2s;
+  transition: all 0.2s ease;
+  padding: 0;
+  color: transparent;
+}
+
+.check-cb:hover {
+  border-color: rgba(255, 255, 255, 0.4);
 }
 
 .check-cb.active {
-  background: #fff;
-  border-color: #fff;
+  background: var(--text-color);
+  border-color: var(--text-color);
   color: #000;
 }
 
 .check-text {
   flex: 1;
-  font-size: 0.9rem;
+  font-size: 0.85rem;
+  color: var(--text-color);
+  opacity: 0.9;
+  white-space: pre-wrap;
+  word-break: break-word;
+  line-height: 1.5;
 }
 
 .check-item.done .check-text {
   text-decoration: line-through;
-  opacity: 0.5;
+  opacity: 0.4;
 }
 
 .check-progress-row {
@@ -273,6 +290,9 @@
   display: flex;
   flex-direction: column;
   gap: 10px;
+  max-height: 600px;
+  overflow-y: auto;
+  padding-right: 10px;
 }
 
 .tree-node {
@@ -328,6 +348,7 @@
   font-size: 0.95rem;
   color: #fff;
   font-weight: 500;
+  white-space: pre-wrap;
 }
 
 .node-content {
@@ -367,6 +388,22 @@
   color: var(--text-dim);
   line-height: 1.5;
   white-space: pre-wrap;
+  max-height: 250px;
+  overflow-y: auto;
+  padding: 10px;
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: var(--radius-sm);
+  margin-top: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.node-body-text::-webkit-scrollbar {
+  width: 4px;
+}
+
+.node-line {
+  min-height: 1.5em;
+  white-space: pre-wrap;
 }
 
 .node-link {
@@ -378,6 +415,18 @@
 
 .node-link:hover {
   color: #93c5fd;
+}
+
+.greentext {
+  color: #2ecc71 !important;
+  font-family: 'DM Mono', monospace;
+  white-space: pre-wrap;
+}
+
+.redtext {
+  color: #e74c3c !important;
+  font-family: 'DM Mono', monospace;
+  white-space: pre-wrap;
 }
 
 .highlight-link {
@@ -393,11 +442,20 @@
   display: flex;
   gap: 4px;
   opacity: 0;
-  transition: opacity 0.2s;
+  transition: all 0.2s;
 }
 
 .node-header:hover .node-actions {
   opacity: 1;
+}
+
+.node-actions .lg-btn {
+  background: rgba(255, 255, 255, 0.03);
+  backdrop-filter: blur(5px);
+}
+
+.node-actions .lg-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
 }
 
 @media (max-width: 600px) {
@@ -472,3 +530,73 @@
   border-radius: var(--radius-md);
   border: 1px solid var(--glass-border);
 }
+
+/* Modal Improvements */
+.input-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+  position: relative;
+}
+
+.input-with-clear {
+  position: relative;
+  display: flex;
+  align-items: center;
+  width: 100%;
+}
+
+.input-with-clear .lg-input,
+.input-with-clear .lg-textarea {
+  padding-right: 36px;
+}
+
+.clear-btn-inner {
+  position: absolute;
+  right: 8px;
+  background: none;
+  border: none;
+  color: var(--text-dim);
+  cursor: pointer;
+  padding: 4px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  opacity: 0.5;
+  transition: opacity 0.2s;
+  z-index: 2;
+}
+
+.clear-btn-inner:hover {
+  opacity: 1;
+  color: #fff;
+}
+
+.format-toolbar {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.format-btn {
+  font-size: 0.7rem;
+  padding: 4px 10px;
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid var(--glass-border);
+  color: var(--text-dim);
+  cursor: pointer;
+  transition: all 0.2s;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.format-btn:hover {
+  background: rgba(255, 255, 255, 0.1);
+  color: #fff;
+  border-color: rgba(255, 255, 255, 0.3);
+}
+
+.format-btn.green:hover { border-color: #2ecc71; color: #2ecc71; }
+.format-btn.red:hover { border-color: #e74c3c; color: #e74c3c; }

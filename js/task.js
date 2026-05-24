@@ -12,6 +12,7 @@ const checkBarFill = document.getElementById('checkBarFill');
 const checkProgressText = document.getElementById('checkProgressText');
 
 const addRootNodeBtn = document.getElementById('addRootNodeBtn');
+const clearCompletedBtn = document.getElementById('clearCompletedBtn');
 
 let currentTask = null;
 
@@ -52,8 +53,9 @@ function renderChecklist() {
     const li = document.createElement('li');
     li.className = `check-item ${item.done ? 'done' : ''}`;
 
-    const cb = document.createElement('div');
+    const cb = document.createElement('button');
     cb.className = `check-cb ${item.done ? 'active' : ''}`;
+    cb.setAttribute('aria-label', item.done ? 'Desmarcar' : 'Marcar como feito');
     cb.innerHTML = item.done ? '<svg viewBox="0 0 20 20" fill="none" style="width:12px;height:12px;"><path d="M4 10l4 4 8-8" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>' : '';
     cb.onclick = () => toggleCheck(index);
 
@@ -62,7 +64,8 @@ function renderChecklist() {
     textSpan.textContent = item.text;
 
     const delBtn = document.createElement('button');
-    delBtn.className = 'lg-btn ghost sm';
+    delBtn.className = 'lg-btn ghost sm danger';
+    delBtn.setAttribute('aria-label', 'Excluir item');
     delBtn.innerHTML = '<svg viewBox="0 0 20 20" fill="none" style="width:14px;height:14px;"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>';
     delBtn.onclick = (e) => {
       e.stopPropagation();
@@ -123,6 +126,13 @@ confirmDelete?.addEventListener('click', () => {
 
 addRootNodeBtn?.addEventListener('click', () => {
   if (typeof addNode === 'function') addNode();
+});
+
+clearCompletedBtn?.addEventListener('click', () => {
+  if (!currentTask.checklist) return;
+  currentTask.checklist = currentTask.checklist.filter(item => !item.done);
+  syncAndSaveTask();
+  renderChecklist();
 });
 
 window.deleteCheck = deleteCheck;

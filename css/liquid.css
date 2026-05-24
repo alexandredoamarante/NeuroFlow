@@ -301,7 +301,8 @@ body {
 
 /* Scrollbar */
 ::-webkit-scrollbar {
-  width: 8px;
+  width: 6px;
+  height: 6px;
 }
 
 ::-webkit-scrollbar-track {
@@ -309,10 +310,20 @@ body {
 }
 
 ::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.1);
+  background: rgba(255, 255, 255, 0.05);
   border-radius: 10px;
+  border: 1px solid transparent;
+  background-clip: content-box;
 }
 
 ::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.2);
+  background: rgba(255, 255, 255, 0.15);
+  background-clip: content-box;
+}
+
+/* Scrollable containers subtle hint */
+.checklist::-webkit-scrollbar-thumb,
+.tree-container::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.08);
+  background-clip: content-box;
 }

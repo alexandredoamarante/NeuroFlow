@@ -119,6 +119,9 @@
           <button class="lg-btn primary sm" id="addCheckBtn">+</button>
         </div>
         <ul class="checklist" id="checklist"></ul>
+        <div class="checklist-footer" style="display:flex; justify-content: space-between; align-items: center; margin-bottom: 1rem;">
+          <button class="lg-btn ghost sm" id="clearCompletedBtn" style="padding: 4px 8px; font-size: 0.7rem;">Limpar concluídos</button>
+        </div>
         <div class="check-progress-row">
           <div class="check-bar-wrap">
             <div class="check-bar-fill" id="checkBarFill"></div>
@@ -160,7 +163,13 @@
 <div class="modal-overlay" id="nodeModal" style="display:none">
   <div class="glass modal-panel">
     <h3 class="panel-title" id="modalTitle">Nova anotação</h3>
-    <input class="lg-input" id="nodeTextInput" placeholder="Título da anotação..."/>
+
+    <div class="input-with-clear">
+      <input class="lg-input" id="nodeTextInput" placeholder="Título da anotação..."/>
+      <button class="clear-btn-inner" id="clearTitleBtn" title="Limpar título">
+        <svg viewBox="0 0 20 20" fill="none" style="width:14px;height:14px;"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      </button>
+    </div>
 
     <!-- Image section -->
     <div class="modal-img-section">
@@ -179,9 +188,28 @@
       <img id="nodeImgPreview" class="modal-img-preview" src="" alt="preview" style="display:none"/>
     </div>
 
-    <textarea class="lg-textarea" id="nodeBodyInput" placeholder="Escreva. Conecte. Organize."></textarea>
+    <div class="input-group">
+      <div class="format-toolbar">
+        <button class="format-btn green" id="fmtGreenBtn" title="Greentext">
+          <span style="font-weight:bold; color:#2ecc71">></span> Verde
+        </button>
+        <button class="format-btn red" id="fmtRedBtn" title="Redtext">
+          <span style="font-weight:bold; color:#e74c3c"><</span> Vermelho
+        </button>
+        <button class="format-btn" id="fmtClearBtn" title="Limpar marcadores">
+          Limpar marcadores
+        </button>
+      </div>
+      <div class="input-with-clear">
+        <textarea class="lg-textarea" id="nodeBodyInput" placeholder="Escreva. Conecte. Organize."></textarea>
+        <button class="clear-btn-inner" id="clearBodyBtn" title="Limpar conteúdo" style="top: 12px; align-items: flex-start;">
+          <svg viewBox="0 0 20 20" fill="none" style="width:14px;height:14px;"><path d="M5 5l10 10M15 5L5 15" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+        </button>
+      </div>
+    </div>
 
     <div class="modal-actions">
+      <button class="lg-btn danger sm" id="modalDelete" style="margin-right: auto; display: none;">Excluir</button>
       <button class="lg-btn ghost sm" id="modalCancel">Cancelar</button>
       <button class="lg-btn primary sm" id="modalSave">Salvar</button>
     </div>
