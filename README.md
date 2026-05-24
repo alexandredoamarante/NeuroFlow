@@ -18,9 +18,9 @@ Uma ferramenta centralizada de organização e foco que une anotações hierárq
 
 ### 2. Marca-texto e Nota Técnica
 *   **Destaque Personalizado:** Selecione qualquer trecho de texto em uma nota renderizada para criar um destaque (highlight). Escolha entre 5 cores diferentes para organizar seus pensamentos.
-*   **Nota Técnica Única:** Clique em um destaque para abrir um painel lateral. Cada marcação suporta uma nota técnica detalhada com suporte a links clicáveis.
-*   **Foco na Leitura:** O painel de comentários possui rolagem interna inteligente, permitindo anotações extensas sem quebrar o layout ou a hierarquia visual.
-*   **Comandos de Escrita:** No campo de texto, use `Enter` para salvar e `Shift + Enter` para quebrar linha.
+*   **Nota Técnica Única:** Clique em um destaque para abrir o painel de "Nota Técnica". Cada marcação suporta uma anotação detalhada com suporte a links clicáveis.
+*   **Foco na Leitura:** O painel possui rolagem interna e altura otimizada para leitura de textos longos, permitindo que você aprofunde suas anotações sem poluir a interface.
+*   **Edição Flexível:** Use o botão "Editar texto" para atualizar suas anotações a qualquer momento. No campo de texto, use `Enter` para salvar e `Shift + Enter` para quebrar linha.
 
 ### 3. Gestão de Foco e Tempo
 *   **Timer Pomodoro:** Cronômetro integrado para sessões de trabalho focado, com ciclos personalizáveis.
