@@ -92,22 +92,11 @@ function renderTree(nodes, container, taskId) {
         img.src = node.img;
         img.className = 'node-img';
 
-        img.onmouseenter = (e) => {
-          showImagePreview(node.img, e);
-        };
-        img.onmousemove = (e) => {
-          moveImagePreview(e);
-        };
-        img.onmouseleave = () => {
-          hideImagePreview();
-        };
-
         img.onclick = (e) => {
           e.stopPropagation();
           if (viewerImg && imageViewer) {
             viewerImg.src = node.img;
             imageViewer.style.display = 'flex';
-            hideImagePreview();
           }
         };
         contentEl.appendChild(img);
@@ -257,13 +246,13 @@ function renderWithHighlights(text, container, highlights, noteId) {
 }
 
 function navigateToNodeByTitle(title) {
-  const target = findNodeByTitle(currentNodes, title);
+  const target = findNodeByTitle(window.currentNodes, title);
   if (target) {
     // Expand parents and the target itself to show content
-    expandParents(currentNodes, target.id);
+    expandParents(window.currentNodes, target.id);
     target.expanded = true;
     saveCurrentNodes();
-    renderTree(currentNodes, treeContainer);
+    renderTree(window.currentNodes, treeContainer);
 
     // Scroll and highlight
     setTimeout(() => {
@@ -318,7 +307,7 @@ function saveCurrentNodes() {
   const id = new URLSearchParams(window.location.search).get('id');
   const task = Storage.getTask(id);
   if (task) {
-    task.nodes = currentNodes;
+    task.nodes = window.currentNodes;
     Storage.saveTask(task);
   }
 }
@@ -349,46 +338,6 @@ async function compressImage(dataUrl, maxWidth = 1600, maxHeight = 1600) {
     };
     img.src = dataUrl;
   });
-}
-
-// Global Image Hover Preview Logic
-let previewEl = null;
-
-function showImagePreview(src, event) {
-  if (!previewEl) {
-    previewEl = document.createElement('div');
-    previewEl.className = 'image-hover-preview';
-    const img = document.createElement('img');
-    previewEl.appendChild(img);
-    document.body.appendChild(previewEl);
-  }
-  const img = previewEl.querySelector('img');
-  img.src = src;
-  previewEl.style.display = 'block';
-  moveImagePreview(event);
-}
-
-function moveImagePreview(event) {
-  if (!previewEl) return;
-  const padding = 20;
-  let x = event.clientX + padding;
-  let y = event.clientY + padding;
-
-  // Viewport constraints
-  const pw = previewEl.offsetWidth;
-  const ph = previewEl.offsetHeight;
-  const vw = window.innerWidth;
-  const vh = window.innerHeight;
-
-  if (x + pw > vw) x = event.clientX - pw - padding;
-  if (y + ph > vh) y = event.clientY - ph - padding;
-
-  previewEl.style.left = `${Math.max(0, x)}px`;
-  previewEl.style.top = `${Math.max(0, y)}px`;
-}
-
-function hideImagePreview() {
-  if (previewEl) previewEl.style.display = 'none';
 }
 
 function addNode(parentId = null) {
@@ -435,9 +384,9 @@ function findNode(nodes, id) {
 }
 
 function deleteNode(id) {
-  currentNodes = removeNode(currentNodes, id);
+  window.currentNodes = removeNode(window.currentNodes, id);
   saveCurrentNodes();
-  renderTree(currentNodes, treeContainer);
+  renderTree(window.currentNodes, treeContainer);
 }
 
 function removeNode(nodes, id) {
@@ -458,10 +407,10 @@ modalSave?.addEventListener('click', async () => {
   // Sync currentNodes from storage before saving to avoid losing other changes
   const taskId = new URLSearchParams(window.location.search).get('id');
   const task = Storage.getTask(taskId);
-  if (task) currentNodes = task.nodes || [];
+  if (task) window.currentNodes = task.nodes || [];
 
   if (editingNodeId) {
-    const node = findNode(currentNodes, editingNodeId);
+    const node = findNode(window.currentNodes, editingNodeId);
     if (node) {
       node.text = text || '(Sem título)';
       node.body = body;
@@ -477,23 +426,23 @@ modalSave?.addEventListener('click', async () => {
       children: []
     };
     if (parentNodeId) {
-      const parent = findNode(currentNodes, parentNodeId);
+      const parent = findNode(window.currentNodes, parentNodeId);
       if (parent) {
         if (!parent.children) parent.children = [];
         parent.children.push(newNode);
         parent.expanded = true;
       } else {
         // Fallback to root if parent not found for some reason
-        currentNodes.push(newNode);
+        window.currentNodes.push(newNode);
       }
     } else {
-      currentNodes.push(newNode);
+      window.currentNodes.push(newNode);
     }
   }
 
   saveCurrentNodes();
   nodeModal.style.display = 'none';
-  renderTree(currentNodes, treeContainer);
+  renderTree(window.currentNodes, treeContainer);
 });
 
 modalCancel?.addEventListener('click', () => nodeModal.style.display = 'none');
@@ -549,15 +498,15 @@ function setAllExpanded(nodes, state) {
 }
 
 expandAllBtn?.addEventListener('click', () => {
-  setAllExpanded(currentNodes, true);
+  setAllExpanded(window.currentNodes, true);
   saveCurrentNodes();
-  renderTree(currentNodes, treeContainer);
+  renderTree(window.currentNodes, treeContainer);
 });
 
 collapseAllBtn?.addEventListener('click', () => {
-  setAllExpanded(currentNodes, false);
+  setAllExpanded(window.currentNodes, false);
   saveCurrentNodes();
-  renderTree(currentNodes, treeContainer);
+  renderTree(window.currentNodes, treeContainer);
 });
 
 imageViewer?.addEventListener('click', (e) => {

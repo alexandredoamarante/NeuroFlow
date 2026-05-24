@@ -247,8 +247,8 @@ const Highlights = {
 
     // Re-render the tree to show the highlight
     if (typeof renderTree === 'function') {
-      currentNodes = task.nodes;
-      renderTree(currentNodes, document.getElementById('treeContainer'), taskId);
+      window.currentNodes = task.nodes;
+      renderTree(window.currentNodes, document.getElementById('treeContainer'), taskId);
     }
   },
 
@@ -389,8 +389,8 @@ const Highlights = {
     // Re-render the tree to update the visual highlight color
     const taskId = new URLSearchParams(window.location.search).get('id');
     if (typeof renderTree === 'function') {
-      currentNodes = this.activeHighlight.task.nodes;
-      renderTree(currentNodes, document.getElementById('treeContainer'), taskId);
+      window.currentNodes = this.activeHighlight.task.nodes;
+      renderTree(window.currentNodes, document.getElementById('treeContainer'), taskId);
     }
   },
 
@@ -406,8 +406,8 @@ const Highlights = {
     // Re-render the tree
     const taskId = new URLSearchParams(window.location.search).get('id');
     if (typeof renderTree === 'function') {
-      currentNodes = task.nodes;
-      renderTree(currentNodes, document.getElementById('treeContainer'), taskId);
+      window.currentNodes = task.nodes;
+      renderTree(window.currentNodes, document.getElementById('treeContainer'), taskId);
     }
   }
 };

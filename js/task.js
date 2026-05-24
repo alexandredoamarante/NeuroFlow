@@ -36,8 +36,8 @@ function init() {
 
   // Init Tree
   if (typeof renderTree === 'function') {
-    currentNodes = currentTask.nodes || [];
-    renderTree(currentNodes, document.getElementById('treeContainer'), currentTask.id);
+    window.currentNodes = currentTask.nodes || [];
+    renderTree(window.currentNodes, document.getElementById('treeContainer'), currentTask.id);
   }
 
   // Init Highlights
