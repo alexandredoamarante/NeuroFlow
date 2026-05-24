@@ -14,7 +14,7 @@ const viewerImg = document.getElementById('viewerImg');
 const modalSave = document.getElementById('modalSave');
 const modalCancel = document.getElementById('modalCancel');
 
-let currentNodes = [];
+window.currentNodes = [];
 let editingNodeId = null;
 let parentNodeId = null;
 
@@ -77,7 +77,7 @@ function renderTree(nodes, container, taskId) {
     header.onclick = () => {
       node.expanded = !node.expanded;
       saveCurrentNodes();
-      renderTree(currentNodes, container.closest('#treeContainer') || treeContainer, taskId);
+      renderTree(window.currentNodes, container.closest('#treeContainer') || treeContainer, taskId);
     };
 
     nodeEl.appendChild(header);
@@ -355,7 +355,7 @@ function addNode(parentId = null) {
 }
 
 function editNode(id) {
-  const node = findNode(currentNodes, id);
+  const node = findNode(window.currentNodes, id);
   editingNodeId = id;
   nodeTextInput.value = node.text || '';
   nodeBodyInput.value = node.body || '';
@@ -519,5 +519,4 @@ window.addNode = addNode;
 window.editNode = editNode;
 window.deleteNode = deleteNode;
 window.renderTree = renderTree;
-window.currentNodes = currentNodes;
 window.findNode = findNode;
