@@ -38,13 +38,23 @@ const Highlights = {
       <div class="popover-content">
         <div class="popover-header">
           <button class="popover-unmark" id="popoverUnmark">Desmarcar</button>
-          <span>Comentários</span>
+          <span>Nota Técnica</span>
           <button class="popover-close">×</button>
         </div>
-        <div class="popover-list" id="popoverList"></div>
+
+        <div class="color-picker" id="colorPicker">
+          <div class="color-opt" data-color="rgba(250, 204, 21, 0.4)" style="background: #facc15"></div>
+          <div class="color-opt" data-color="rgba(34, 197, 94, 0.4)" style="background: #22c55e"></div>
+          <div class="color-opt" data-color="rgba(59, 130, 246, 0.4)" style="background: #3b82f6"></div>
+          <div class="color-opt" data-color="rgba(239, 68, 68, 0.4)" style="background: #ef4444"></div>
+          <div class="color-opt" data-color="rgba(168, 85, 247, 0.4)" style="background: #a855f7"></div>
+        </div>
+
+        <div class="popover-single-comment" id="popoverComment"></div>
+
         <div class="popover-input-row">
-          <textarea id="popoverInput" placeholder="Adicionar comentário..." rows="1"></textarea>
-          <button id="popoverAdd">Enviar</button>
+          <textarea id="popoverInput" placeholder="Escreva um comentário..." rows="1"></textarea>
+          <button id="popoverSave">Salvar</button>
         </div>
       </div>
     `;
@@ -56,12 +66,16 @@ const Highlights = {
     };
 
     popover.querySelector('#popoverUnmark').onclick = () => this.removeHighlight();
+    popover.querySelector('#popoverSave').onclick = () => this.saveComment();
 
-    popover.querySelector('#popoverAdd').onclick = () => this.addComment();
+    popover.querySelectorAll('.color-opt').forEach(opt => {
+      opt.onclick = () => this.updateColor(opt.dataset.color);
+    });
+
     popover.querySelector('#popoverInput').onkeypress = (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        this.addComment();
+        this.saveComment();
       }
     };
   },
@@ -225,7 +239,8 @@ const Highlights = {
       start,
       end,
       text,
-      comments: [],
+      comment: '',
+      color: 'rgba(250, 204, 21, 0.4)', // Default yellow
       createdAt: new Date().toISOString()
     };
 
@@ -294,84 +309,76 @@ const Highlights = {
   },
 
   renderComments() {
-    const list = this.popover.querySelector('#popoverList');
-    list.innerHTML = '';
+    const display = this.popover.querySelector('#popoverComment');
+    const input = this.popover.querySelector('#popoverInput');
+    const highlight = this.activeHighlight.highlight;
 
-    this.activeHighlight.highlight.comments.forEach((c, idx) => {
-      const item = document.createElement('div');
-      item.className = 'comment-item';
+    display.innerHTML = '';
 
+    if (highlight.comment) {
       const textDiv = document.createElement('div');
-      textDiv.className = 'comment-text';
-      textDiv.textContent = c.text;
-
-      const metaDiv = document.createElement('div');
-      metaDiv.className = 'comment-meta';
-
-      const dateSpan = document.createElement('span');
-      dateSpan.textContent = new Date(c.date).toLocaleString();
-
-      const actionsDiv = document.createElement('div');
-      actionsDiv.className = 'comment-actions';
-
-      const editBtn = document.createElement('button');
-      editBtn.className = 'comment-edit';
-      editBtn.textContent = 'Editar';
-      editBtn.onclick = () => this.editComment(idx);
-
-      const delBtn = document.createElement('button');
-      delBtn.className = 'comment-del';
-      delBtn.textContent = 'Excluir';
-      delBtn.onclick = () => this.deleteComment(idx);
-
-      actionsDiv.appendChild(editBtn);
-      actionsDiv.appendChild(delBtn);
-
-      metaDiv.appendChild(dateSpan);
-      metaDiv.appendChild(actionsDiv);
-
-      item.appendChild(textDiv);
-      item.appendChild(metaDiv);
-      list.appendChild(item);
-    });
-
-    if (this.activeHighlight.highlight.comments.length === 0) {
+      textDiv.className = 'comment-text scrollable';
+      // Use renderSafeLinks equivalent here for clickable links
+      this.renderCommentText(highlight.comment, textDiv);
+      display.appendChild(textDiv);
+      input.value = highlight.comment;
+    } else {
       const empty = document.createElement('div');
       empty.className = 'comment-empty';
-      empty.textContent = 'Nenhum comentário ainda.';
-      list.appendChild(empty);
+      empty.textContent = 'Sem comentário. Escreva abaixo para adicionar.';
+      display.appendChild(empty);
+      input.value = '';
     }
+
+    // Highlight active color
+    this.popover.querySelectorAll('.color-opt').forEach(opt => {
+      opt.classList.toggle('active', opt.dataset.color === highlight.color);
+    });
   },
 
-  addComment() {
+  renderCommentText(text, container) {
+    // Basic link detection
+    const urlRegex = /(https?:\/\/[^\s]+|www\.[^\s]+)/g;
+    const parts = text.split(urlRegex);
+
+    parts.forEach(part => {
+      if (!part) return;
+      if (part.match(urlRegex)) {
+        let href = part;
+        if (part.startsWith('www.')) href = 'http://' + part;
+        const a = document.createElement('a');
+        a.href = href;
+        a.className = 'node-link';
+        a.textContent = part;
+        a.target = '_blank';
+        a.rel = 'noopener noreferrer';
+        a.onclick = (e) => e.stopPropagation();
+        container.appendChild(a);
+      } else {
+        container.appendChild(document.createTextNode(part));
+      }
+    });
+  },
+
+  saveComment() {
     const input = this.popover.querySelector('#popoverInput');
     const text = input.value.trim();
-    if (!text) return;
 
-    this.activeHighlight.highlight.comments.push({
-      text,
-      date: new Date().toISOString()
-    });
-
-    Storage.saveTask(this.activeHighlight.task);
-    input.value = '';
-    this.renderComments();
-  },
-
-  deleteComment(idx) {
-    this.activeHighlight.highlight.comments.splice(idx, 1);
+    this.activeHighlight.highlight.comment = text;
     Storage.saveTask(this.activeHighlight.task);
     this.renderComments();
   },
 
-  editComment(idx) {
-    const comment = this.activeHighlight.highlight.comments[idx];
-    const newText = prompt('Editar comentário:', comment.text);
-    if (newText !== null && newText.trim() !== '') {
-      comment.text = newText.trim();
-      comment.date = new Date().toISOString();
-      Storage.saveTask(this.activeHighlight.task);
-      this.renderComments();
+  updateColor(color) {
+    this.activeHighlight.highlight.color = color;
+    Storage.saveTask(this.activeHighlight.task);
+    this.renderComments();
+
+    // Re-render the tree to update the visual highlight color
+    const taskId = new URLSearchParams(window.location.search).get('id');
+    if (typeof renderTree === 'function') {
+      currentNodes = this.activeHighlight.task.nodes;
+      renderTree(currentNodes, document.getElementById('treeContainer'), taskId);
     }
   },
 

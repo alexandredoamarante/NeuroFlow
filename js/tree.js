@@ -225,6 +225,10 @@ function renderWithHighlights(text, container, highlights, noteId) {
       highlightSpan.className = 'note-highlight';
       highlightSpan.dataset.id = h.id;
       highlightSpan.dataset.noteId = noteId;
+      if (h.color) {
+        highlightSpan.style.backgroundColor = h.color;
+        highlightSpan.style.borderBottomColor = h.color.replace('0.4', '0.7');
+      }
       // We still want to track source within highlights
       const segment = text.substring(h.start, h.end);
       renderNormal(segment, highlightSpan, true, h.start);

@@ -496,90 +496,59 @@
   border-color: rgba(255, 85, 85, 0.3);
 }
 
-.popover-list {
-  flex: 1;
-  overflow-y: auto;
-  margin-bottom: 1rem;
+.color-picker {
   display: flex;
-  flex-direction: column;
-  gap: 0.8rem;
-  padding-right: 4px;
+  gap: 10px;
+  margin-bottom: 1.5rem;
+  justify-content: center;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--glass-border);
 }
 
-.popover-list::-webkit-scrollbar {
+.color-opt {
+  width: 22px;
+  height: 22px;
+  border-radius: 50%;
+  cursor: pointer;
+  border: 2px solid transparent;
+  transition: transform 0.2s, border-color 0.2s;
+}
+
+.color-opt:hover {
+  transform: scale(1.2);
+}
+
+.color-opt.active {
+  border-color: #fff;
+  box-shadow: 0 0 8px rgba(255, 255, 255, 0.4);
+}
+
+.popover-single-comment {
+  flex: 1;
+  margin-bottom: 1.5rem;
+  min-height: 40px;
+  max-height: 200px;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.comment-text.scrollable {
+  overflow-y: auto;
+  padding-right: 8px;
+  font-size: 0.9rem;
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+.comment-text.scrollable::-webkit-scrollbar {
   width: 5px;
 }
 
-.popover-list::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.15);
-  border-radius: 3px;
-}
-
-.popover-list::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.25);
-}
-
-.comment-item {
-  padding-bottom: 0.8rem;
-  border-bottom: 1px solid rgba(255, 255, 255, 0.05);
-}
-
-.comment-item:last-child {
-  border-bottom: none;
-}
-
-.comment-text {
-  font-size: 0.9rem;
-  line-height: 1.4;
-  margin-bottom: 0.3rem;
-  word-break: break-word;
-  white-space: pre-wrap;
-  max-height: 200px;
-  overflow-y: auto;
-  padding-right: 4px;
-}
-
-.comment-text::-webkit-scrollbar {
-  width: 4px;
-}
-
-.comment-text::-webkit-scrollbar-thumb {
+.comment-text.scrollable::-webkit-scrollbar-thumb {
   background: rgba(255, 255, 255, 0.1);
-  border-radius: 2px;
-}
-
-.comment-meta {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  font-size: 0.7rem;
-  color: var(--text-dim);
-}
-
-.comment-actions {
-  display: flex;
-  gap: 8px;
-}
-
-.comment-edit, .comment-del {
-  background: none;
-  border: none;
-  cursor: pointer;
-  padding: 0;
-  font-size: 0.7rem;
-  transition: opacity 0.2s;
-}
-
-.comment-edit {
-  color: #60a5fa;
-}
-
-.comment-del {
-  color: #ff5555;
-}
-
-.comment-edit:hover, .comment-del:hover {
-  opacity: 0.7;
+  border-radius: 3px;
 }
 
 .popover-input-row {
