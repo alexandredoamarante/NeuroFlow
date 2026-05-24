@@ -38,7 +38,7 @@ const Highlights = {
       <div class="popover-content">
         <div class="popover-header">
           <button class="popover-unmark" id="popoverUnmark">Desmarcar</button>
-          <span>Marcar Texto</span>
+          <span>Nota Técnica</span>
           <button class="popover-close">×</button>
         </div>
 
@@ -53,7 +53,7 @@ const Highlights = {
         <div class="popover-display-area" id="popoverComment"></div>
 
         <div class="popover-edit-area" id="popoverEditArea" style="display: none">
-          <textarea id="popoverInput" placeholder="Escreva um comentário..." rows="3"></textarea>
+          <textarea id="popoverInput" placeholder="Escreva uma nota..." rows="3"></textarea>
           <div class="edit-actions">
              <button class="lg-btn ghost sm" id="popoverCancel">Cancelar</button>
              <button class="lg-btn primary sm" id="popoverSave">Salvar</button>
@@ -138,14 +138,6 @@ const Highlights = {
     // Calculate offsets relative to the note text
     const offsets = this.getSelectionOffsets(noteBody, selection);
 
-    // Find note ID
-    const nodeEl = noteBody.closest('.tree-node');
-    // We need a way to map the element back to the node data
-    // Usually tree.js renders nodes with specific IDs.
-    // Let's assume we can find the node ID from the tree rendering logic or by traversal.
-    // In tree.js, we don't explicitly set data-id on the header or node.
-    // I should probably add data-id to the node element in tree.js.
-
     this.activeSelection = {
       noteId: this.findNodeId(noteBody),
       text: selection.toString(),
@@ -174,9 +166,6 @@ const Highlights = {
       const sourceEl = current.closest('[data-source-start]');
       if (sourceEl) {
         const base = parseInt(sourceEl.dataset.sourceStart);
-        // We need to account for the offset within the text node if multiple text nodes exist in the span
-        // But our render logic creates 1 span per part, so usually node is the only child.
-        // To be safe, we sum up previous sibling lengths if any.
         let internalOffset = offset;
         let sib = node.previousSibling;
         while(sib) {
@@ -208,7 +197,6 @@ const Highlights = {
 
   findNodeId(el) {
     const nodeEl = el.closest('.tree-node');
-    // We'll need to modify tree.js to include the ID
     return nodeEl.dataset.id;
   },
 
