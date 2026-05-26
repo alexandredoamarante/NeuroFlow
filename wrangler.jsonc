@@ -1,2 +1,4 @@
-// wrangler.jsonc
-"name": "neuro-flow",
+{
+  "name": "neuroaark",
+  "compatibility_date": "2026-05-26"
+}
