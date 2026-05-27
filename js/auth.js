@@ -16,24 +16,22 @@ const Auth = {
     this.updateUI(session);
 
     // Listen for auth changes
-    Storage.supabase.auth.onAuthStateChange((event, session) => {
+    Storage.supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth event:', event);
       this.updateUI(session);
 
       if (event === 'SIGNED_IN') {
-        Storage.syncOnLogin();
+        await Storage.syncOnLogin();
       }
     });
 
-    authBtn.addEventListener('click', () => {
-      const user = Storage.supabase.auth.getUser();
-      Storage.supabase.auth.getSession().then(({ data: { session } }) => {
-        if (session) {
-          this.logout();
-        } else {
-          this.login();
-        }
-      });
+    authBtn.addEventListener('click', async () => {
+      const { data: { session } } = await Storage.supabase.auth.getSession();
+      if (session) {
+        await this.logout();
+      } else {
+        await this.login();
+      }
     });
 
     authBtn.style.display = 'flex';
@@ -52,7 +50,8 @@ const Auth = {
   async logout() {
     const { error } = await Storage.supabase.auth.signOut();
     if (error) console.error('Error logging out:', error.message);
-    else window.location.reload();
+    // Force reload to clear memory and re-initialize state
+    window.location.href = 'index.html';
   },
 
   updateUI(session) {

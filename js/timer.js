@@ -54,11 +54,11 @@ function resetTimer() {
   updateTimerDisplay();
 }
 
-function completeSession() {
+async function completeSession() {
   const id = new URLSearchParams(window.location.search).get('id');
-  const task = Storage.getTask(id);
+  const task = await Storage.getTask(id);
   task.sessions = (task.sessions || 0) + 1;
-  Storage.saveTask(task);
+  await Storage.saveTask(task);
 
   // Also update local task object if we are on the task page
   if (window.currentTask && window.currentTask.id === id) {
