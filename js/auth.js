@@ -2,6 +2,8 @@ const authBtn = document.getElementById('authBtn');
 const authText = document.getElementById('authText');
 
 const Auth = {
+  isAuthActionInProgress: false,
+
   async init() {
     if (!authBtn) return;
 
@@ -25,12 +27,37 @@ const Auth = {
       }
     });
 
-    authBtn.addEventListener('click', async () => {
-      const { data: { session } } = await Storage.supabase.auth.getSession();
-      if (session) {
-        await this.logout();
-      } else {
-        await this.login();
+    // Mobile-friendly event listener
+    const handleAuthAction = async (e) => {
+      if (this.isAuthActionInProgress) return;
+      this.isAuthActionInProgress = true;
+
+      try {
+        const { data: { session } } = await Storage.supabase.auth.getSession();
+        if (session) {
+          await this.logout();
+        } else {
+          await this.login();
+        }
+      } catch (err) {
+        console.error('Auth action error:', err);
+      } finally {
+        // Delay resetting to avoid double triggers
+        setTimeout(() => {
+          this.isAuthActionInProgress = false;
+        }, 1000);
+      }
+    };
+
+    authBtn.addEventListener('pointerup', (e) => {
+      e.preventDefault();
+      handleAuthAction(e);
+    });
+
+    // Fallback for older browsers
+    authBtn.addEventListener('click', (e) => {
+      if (e.pointerType === 'mouse' || !e.pointerType) {
+        handleAuthAction(e);
       }
     });
 
@@ -41,7 +68,7 @@ const Auth = {
     const { error } = await Storage.supabase.auth.signInWithOAuth({
       provider: 'google',
       options: {
-        redirectTo: window.location.origin
+        redirectTo: 'https://neuroaark.pages.dev'
       }
     });
     if (error) console.error('Error logging in:', error.message);
@@ -50,7 +77,11 @@ const Auth = {
   async logout() {
     const { error } = await Storage.supabase.auth.signOut();
     if (error) console.error('Error logging out:', error.message);
-    // Force reload to clear memory and re-initialize state
+
+    // Clear session-specific state from UI immediately if needed
+    this.updateUI(null);
+
+    // Force reload to clear memory and re-initialize state in anonymous mode
     window.location.href = 'index.html';
   },
 

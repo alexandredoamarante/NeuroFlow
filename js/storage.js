@@ -5,9 +5,15 @@ const Storage = {
   supabase: supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY),
 
   async getTasksKey() {
+    // Migration: neuroaark_tasks -> neuroaark_tasks_anonymous
+    const legacyData = localStorage.getItem('neuroaark_tasks');
+    if (legacyData && !localStorage.getItem('neuroaark_tasks_anonymous')) {
+      localStorage.setItem('neuroaark_tasks_anonymous', legacyData);
+    }
+
     const { data: { session } } = await this.supabase.auth.getSession();
-    if (session) return `neuroaark_tasks_${session.user.id}`;
-    return 'neuroaark_tasks';
+    if (session) return `neuroaark_tasks_user_${session.user.id}`;
+    return 'neuroaark_tasks_anonymous';
   },
 
   async getTasks() {
@@ -50,7 +56,7 @@ const Storage = {
     localStorage.setItem(key, JSON.stringify(tasks));
     const { data: { session } } = await this.supabase.auth.getSession();
     if (session) {
-      // For bulk save, we might want a single call, but current app saves individually mostly
+      // For bulk save, we iterate and save each (ensuring cloud sync)
       for (const task of tasks) {
         await this.saveTask(task);
       }
@@ -130,12 +136,14 @@ const Storage = {
       if (!session) return;
 
       // Check if we already migrated
-      if (localStorage.getItem('neuroaark_migrated') === 'true') return;
+      const migrationFlag = `neuroaark_migrated_${session.user.id}`;
+      if (localStorage.getItem(migrationFlag) === 'true') return;
 
-      const localTasks = JSON.parse(localStorage.getItem('neuroaark_tasks') || '[]');
-      if (localTasks.length === 0) return;
+      // Sync FROM anonymous storage TO user storage
+      const anonymousTasks = JSON.parse(localStorage.getItem('neuroaark_tasks_anonymous') || '[]');
+      if (anonymousTasks.length === 0) return;
 
-      // Check if cloud has data
+      // Check if user has any tasks in Supabase
       const { data: cloudData, error } = await this.supabase
         .from('tasks')
         .select('id')
@@ -146,12 +154,13 @@ const Storage = {
         return;
       }
 
+      // If cloud is empty for this user, migrate anonymous tasks
       if (cloudData && cloudData.length === 0) {
-        console.log('Migrating local tasks to Supabase...');
-        for (const task of localTasks) {
+        console.log('Migrating anonymous tasks to Supabase user account...');
+        for (const task of anonymousTasks) {
           await this.saveTask(task);
         }
-        localStorage.setItem('neuroaark_migrated', 'true');
+        localStorage.setItem(migrationFlag, 'true');
       }
     } catch (e) {
       console.error('Supabase syncOnLogin error:', e);
