@@ -22,6 +22,24 @@ const Storage = {
   _lastUpdatedAt: null,
 
   /**
+   * Forensic logger for Supabase interactions.
+   */
+  _logNetwork(action, payload, response, error) {
+    const timestamp = new Date().toISOString();
+    const style = error ? 'color: #ff4444; font-weight: bold;' : 'color: #44ff44;';
+    console.group(`[FORENSIC] [${timestamp}] ${action}`);
+    if (payload) console.log('Payload:', JSON.parse(JSON.stringify(payload)));
+    if (response) console.log('Response:', JSON.parse(JSON.stringify(response)));
+    if (error) console.error('Error Details:', error);
+    console.groupEnd();
+
+    // Store in window for inspection if needed
+    if (!window.__SUPABASE_LOGS__) window.__SUPABASE_LOGS__ = [];
+    window.__SUPABASE_LOGS__.push({ timestamp, action, payload, response, error });
+    if (window.__SUPABASE_LOGS__.length > 100) window.__SUPABASE_LOGS__.shift();
+  },
+
+  /**
    * Generates or retrieves a unique device ID.
    */
   getDeviceId() {
@@ -176,12 +194,15 @@ const Storage = {
         }
 
         console.log('[HYDRATE] [TRACE] Fetching canonical_state for user:', session.user.id);
-        const { data, error } = await this.supabase
+        const response = await this.supabase
           .from('tasks')
           .select('*')
           .eq('user_id', session.user.id)
           .eq('local_id', 'canonical_state')
           .maybeSingle();
+
+        const { data, error } = response;
+        this._logNetwork('FETCH_CANONICAL_STATE', { userId: session.user.id }, data, error);
 
         if (error) {
           console.error('[HYDRATE] [TRACE] Supabase error:', error.message, error.code);
@@ -202,34 +223,35 @@ const Storage = {
           const localUpdatedAt = localState.updated_at ? new Date(localState.updated_at).getTime() : 0;
           const localVersion = localState.version || 0;
 
+          // FORCE CLOUD AUTHORITY: Remote wins unless local is strictly newer AND has more data.
           let shouldAdoptRemote = false;
+
           if (remoteVersion > localVersion) {
             shouldAdoptRemote = true;
-            console.log('[HYDRATE] [TRACE] Choice: Remote is newer (version).');
+            console.log('[HYDRATE] [TRACE] Choice: Remote version is ahead.');
           } else if (remoteVersion === localVersion) {
             if (remoteUpdatedAt >= localUpdatedAt) {
               shouldAdoptRemote = true;
-              console.log('[HYDRATE] [TRACE] Choice: Remote is newer or equal (timestamp).');
+              console.log('[HYDRATE] [TRACE] Choice: Remote timestamp is newer or equal.');
             } else {
-              console.log('[HYDRATE] [TRACE] Choice: Local is newer (timestamp).');
+              console.log('[HYDRATE] [TRACE] Choice: Local timestamp is newer.');
             }
-          } else {
-            console.log('[HYDRATE] [TRACE] Choice: Local is newer (version).');
           }
 
-          // Absolute safety: if local is empty but cloud has data, adopt cloud.
-          if (!shouldAdoptRemote && localState.nodes.length === 0 && (data.nodes && data.nodes.length > 0)) {
-            console.warn('[HYDRATE] [TRACE] Choice: Local is EMPTY but cloud HAS data. Forcing adoption of cloud.');
-            shouldAdoptRemote = true;
+          // HARD GUARD: Remote exists but Local is empty? ALWAYS adopt Remote.
+          if (localState.nodes.length === 0 && data.nodes?.length > 0) {
+              console.warn('[HYDRATE] [TRACE] HARD GUARD: Local is empty. Adopting Cloud.');
+              shouldAdoptRemote = true;
           }
 
-          // CRITICAL: If local state exists but has no version/timestamp (legacy), and cloud has data, adopt cloud.
-          if (!shouldAdoptRemote && localState.version === 0 && !localState.updated_at && (data.nodes && data.nodes.length > 0)) {
-              console.warn('[HYDRATE] [TRACE] Choice: Local is unversioned legacy but cloud has data. Adopting cloud.');
+          // HARD GUARD: Remote exists but Local is legacy? ALWAYS adopt Remote.
+          if (localState.version === 0 && !localState.updated_at && data.nodes?.length > 0) {
+              console.warn('[HYDRATE] [TRACE] HARD GUARD: Local is legacy. Adopting Cloud.');
               shouldAdoptRemote = true;
           }
 
           if (shouldAdoptRemote) {
+            console.log('[HYDRATE] [TRACE] Adopting Remote State.');
             const newState = {
               nodes: data.nodes || [],
               version: remoteVersion,
@@ -241,7 +263,8 @@ const Storage = {
             this._setLocalState(key, newState);
             window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: newState.nodes }));
           } else {
-            this._currentVersion = Math.max(this._currentVersion, remoteVersion);
+            console.log('[HYDRATE] [TRACE] Keeping Local State. Version:', localVersion);
+            this._currentVersion = Math.max(this._currentVersion, remoteVersion, localVersion);
           }
         } else {
           console.log('[HYDRATE] Cloud returned empty data (no row).');
@@ -398,12 +421,15 @@ const Storage = {
 
       // VERSION GUARD: Fetch latest version from cloud before UPSERT to prevent clobbering.
       console.log('[SAVE] [TRACE] Fetching latest state for conflict check...');
-      const { data: cloudState, error: fetchError } = await this.supabase
+      const versionCheckResponse = await this.supabase
         .from('tasks')
         .select('version, updated_at, nodes')
         .eq('user_id', session.user.id)
         .eq('local_id', 'canonical_state')
         .maybeSingle();
+
+      const { data: cloudState, error: fetchError } = versionCheckResponse;
+      this._logNetwork('VERSION_CHECK_BEFORE_UPSERT', { userId: session.user.id }, cloudState, fetchError);
 
       if (fetchError) {
         console.error('[SAVE] [TRACE] Error fetching cloud state for version check:', fetchError.message);
@@ -438,10 +464,13 @@ const Storage = {
       };
 
       console.log('[SAVE] [TRACE] Supabase UPSERT start. Version:', nextVersion);
-      const { data, error } = await this.supabase
+      const upsertResponse = await this.supabase
         .from('tasks')
         .upsert(payload, { onConflict: 'user_id,local_id' })
         .select();
+
+      const { data, error } = upsertResponse;
+      this._logNetwork('UPSERT_CANONICAL_STATE', payload, data, error);
 
       if (error) {
         console.error('[SAVE] [TRACE] Supabase UPSERT error:', error.message, error.details);
@@ -491,11 +520,14 @@ const Storage = {
     const migrationFlag = `neuroaark_migrated_v4_${session.user.id}`;
 
     // Check for legacy cloud tasks (pre-canonical model)
-    const { data: legacyCloud } = await this.supabase
+    const migrationFetchResponse = await this.supabase
       .from('tasks')
       .select('*')
       .eq('user_id', session.user.id)
       .neq('local_id', 'canonical_state');
+
+    const { data: legacyCloud, error: migrationError } = migrationFetchResponse;
+    this._logNetwork('MIGRATION_FETCH_LEGACY', { userId: session.user.id }, legacyCloud, migrationError);
 
     let consolidated = [];
     if (legacyCloud && legacyCloud.length > 0) {
@@ -521,10 +553,29 @@ const Storage = {
     if (consolidated.length > 0) {
       console.log('[MIGRATE] [TRACE] Consolidating', consolidated.length, 'tasks to cloud...');
       this._hasCompletedInitialSync = true; // Unlock to allow migration write
-      // We don't await here to avoid deadlock as we are already inside a syncQueue chain if called from _revalidateTasks
-      this._syncTasksToCloud(consolidated);
-      // Clean up legacy
-      await this.supabase.from('tasks').delete().match({ user_id: session.user.id }).neq('local_id', 'canonical_state');
+
+      const nextVersion = this._currentVersion + 1;
+      const payload = {
+        user_id: session.user.id,
+        local_id: 'canonical_state',
+        nodes: consolidated,
+        version: nextVersion,
+        device_id: this.getDeviceId(),
+        updated_at: new Date().toISOString()
+      };
+
+      console.log('[MIGRATE] [TRACE] Performing direct migration UPSERT...');
+      const migrateUpsert = await this.supabase
+        .from('tasks')
+        .upsert(payload, { onConflict: 'user_id,local_id' });
+
+      this._logNetwork('MIGRATION_UPSERT', payload, migrateUpsert.data, migrateUpsert.error);
+
+      if (!migrateUpsert.error) {
+          this._currentVersion = nextVersion;
+          // Clean up legacy
+          await this.supabase.from('tasks').delete().match({ user_id: session.user.id }).neq('local_id', 'canonical_state');
+      }
     }
 
     localStorage.setItem(migrationFlag, 'true');
@@ -571,9 +622,10 @@ const Storage = {
 
     // Clear user-specific caches
     localStorage.removeItem('neuroaark_tasks_anonymous');
-    const keys = Object.keys(localStorage);
-    keys.forEach(k => { if (k.startsWith('neuroaark_tasks_user_')) localStorage.removeItem(k); });
-    console.log('[AUTH] Logout complete.');
+    // CRITICAL: DO NOT clear user keys anymore. This allows offline/recovery mode if re-login fails or returns empty.
+    // const keys = Object.keys(localStorage);
+    // keys.forEach(k => { if (k.startsWith('neuroaark_tasks_user_')) localStorage.removeItem(k); });
+    console.log('[AUTH] [TRACE] Logout complete. Cache preserved for resilience.');
   },
 
   async initRealtime(userId) {
