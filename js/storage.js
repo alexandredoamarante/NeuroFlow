@@ -9,6 +9,7 @@ const Storage = {
   _revalidationPromises: {},
   _syncQueue: Promise.resolve(),
   _realtimeChannel: null,
+  _isSyncing: false,
 
   async getSession() {
     const now = Date.now();
@@ -76,8 +77,8 @@ const Storage = {
           // In the single-document model, the 'nodes' field contains the full array of tasks
           const cloudTasks = data.nodes || [];
 
-          // Safety: Don't overwrite LocalStorage if we have active debounced saves.
-          if (Object.keys(this._debounceTimers).length > 0) {
+          // Safety: Don't overwrite LocalStorage if we have active debounced saves or active syncing.
+          if (Object.keys(this._debounceTimers).length > 0 || this._isSyncing) {
             console.log('Skipping cloud-to-local overwrite to protect pending local changes');
             return JSON.parse(localStorage.getItem(key) || '[]');
           }
@@ -185,6 +186,8 @@ const Storage = {
   },
 
   async _syncTasksToCloud(tasks) {
+    // 1. Set syncing flag immediately to block concurrent revalidations/realtime updates from overwriting local state
+    this._isSyncing = true;
     try {
       const session = await this.getSession();
       if (session) {
@@ -195,14 +198,20 @@ const Storage = {
           updated_at: new Date().toISOString()
         };
 
+        // 2. Explicitly await the Supabase upsert to ensure _isSyncing remains true until the network request completes
         const { error } = await this.supabase
           .from('tasks')
           .upsert(payload, { onConflict: 'user_id,local_id' });
 
-        if (error) console.error('Error saving to Supabase:', error.message);
+        if (error) {
+          console.error('Error saving to Supabase:', error.message);
+        }
       }
     } catch (e) {
       console.error('Supabase sync error:', e);
+    } finally {
+      // 3. Reset flag only after all async operations are finished
+      this._isSyncing = false;
     }
   },
 
@@ -226,7 +235,7 @@ const Storage = {
       if (!session) return;
 
       // Initialize Realtime subscription
-      this.initRealtime(session.user.id);
+      await this.initRealtime(session.user.id);
 
       // Check if we already migrated to the single-document model
       const migrationFlag = `neuroaark_migrated_v2_${session.user.id}`;
@@ -316,10 +325,38 @@ const Storage = {
   },
 
   /**
+   * Properly clears the current session, unsubscribes from realtime, and resets state.
+   */
+  async clearSession() {
+    if (this._realtimeChannel) {
+      console.log('Unsubscribing from Realtime channel...');
+      await this.supabase.removeChannel(this._realtimeChannel);
+      this._realtimeChannel = null;
+    }
+
+    // Reset internal state
+    this._session = null;
+    this._lastCheck = 0;
+    this._isSyncing = false;
+
+    // Clear debounce timers to prevent pending syncs from firing after logout
+    for (const key in this._debounceTimers) {
+      if (this._debounceTimers[key].timeoutId) {
+        clearTimeout(this._debounceTimers[key].timeoutId);
+      }
+    }
+    this._debounceTimers = {};
+    this._revalidationPromises = {};
+  },
+
+  /**
    * Initializes Supabase Realtime for instant cross-device sync.
    */
-  initRealtime(userId) {
-    if (this._realtimeChannel) return;
+  async initRealtime(userId) {
+    if (this._realtimeChannel) {
+      await this.supabase.removeChannel(this._realtimeChannel);
+      this._realtimeChannel = null;
+    }
 
     console.log('Initializing Supabase Realtime for user:', userId);
     this._realtimeChannel = this.supabase
@@ -338,8 +375,8 @@ const Storage = {
             const cloudTasks = payload.new.nodes || [];
             const key = await this.getTasksKey();
 
-            // Safety: Only update local if no pending saves
-            if (Object.keys(this._debounceTimers).length === 0) {
+            // Safety: Only update local if no pending saves AND not currently syncing
+            if (Object.keys(this._debounceTimers).length === 0 && !this._isSyncing) {
               const localStr = localStorage.getItem(key);
               const cloudStr = JSON.stringify(cloudTasks);
               if (localStr !== cloudStr) {
