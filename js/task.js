@@ -137,3 +137,21 @@ addRootNodeBtn?.addEventListener('click', () => {
 window.deleteCheck = deleteCheck;
 
 init();
+
+// Listen for background updates from Supabase
+window.addEventListener('tasksUpdated', async (e) => {
+  const updatedTasks = e.detail;
+  const urlParams = new URLSearchParams(window.location.search);
+  const id = urlParams.get('id');
+  const updatedTask = updatedTasks.find(t => t.id === id);
+  if (updatedTask) {
+    currentTask = updatedTask;
+    taskPageTitle.textContent = currentTask.name;
+    taskColorBar.style.backgroundColor = currentTask.color;
+    renderChecklist();
+    if (typeof renderTree === 'function') {
+      window.currentNodes = currentTask.nodes || [];
+      renderTree(window.currentNodes, document.getElementById('treeContainer'), currentTask.id);
+    }
+  }
+});

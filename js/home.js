@@ -99,3 +99,6 @@ createTaskBtn?.addEventListener('click', async () => {
 });
 
 renderTasks();
+
+// Listen for background updates from Supabase
+window.addEventListener('tasksUpdated', () => renderTasks());
