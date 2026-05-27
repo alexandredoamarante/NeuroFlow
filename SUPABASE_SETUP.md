@@ -32,7 +32,16 @@ The migration automatically enables RLS and creates policies. To verify:
 2.  Find the `tasks` table.
 3.  Verify that there are 4 policies (SELECT, INSERT, UPDATE, DELETE) restricted to `auth.uid() = user_id`.
 
-## 4. API Settings
+## 4. Realtime Configuration
+
+Neuroaark uses Supabase Realtime to keep devices in sync without page refreshes.
+
+1.  Navigate to **Database** > **Replication**.
+2.  In the **supabase_realtime** publication, click on **Source**.
+3.  Ensure that the `tasks` table is toggled **ON**.
+    - *Note: The SQL migration attempts to do this automatically, but manual verification is recommended.*
+
+## 5. API Settings
 
 Ensure your application uses the correct public keys. These are already configured in `js/storage.js`:
 

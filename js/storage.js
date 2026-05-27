@@ -7,6 +7,8 @@ const Storage = {
   _lastCheck: 0,
   _debounceTimers: {},
   _revalidationPromises: {},
+  _syncQueue: Promise.resolve(),
+  _realtimeChannel: null,
 
   async getSession() {
     const now = Date.now();
@@ -63,9 +65,14 @@ const Storage = {
           .select('*')
           .eq('user_id', session.user.id)
           .eq('local_id', 'canonical_state')
-          .single();
+          .maybeSingle();
 
-        if (!error && data) {
+        if (error) {
+          console.warn('Supabase fetch error, falling back to local cache:', error.message);
+          return JSON.parse(localStorage.getItem(key) || '[]');
+        }
+
+        if (data) {
           // In the single-document model, the 'nodes' field contains the full array of tasks
           const cloudTasks = data.nodes || [];
 
@@ -83,15 +90,10 @@ const Storage = {
             window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
           }
           return cloudTasks;
-        } else if (error && error.code === 'PGRST116') {
-          // Row not found - first time user or legacy user needing migration
-          return JSON.parse(localStorage.getItem(key) || '[]');
-        } else {
-          // Error fetching from cloud (e.g. network failure)
-          // Return local cache as fallback but DON'T overwrite anything
-          console.warn('Supabase fetch error, falling back to local cache:', error);
-          return JSON.parse(localStorage.getItem(key) || '[]');
         }
+
+        // No data found - return local
+        return JSON.parse(localStorage.getItem(key) || '[]');
       } catch (e) {
         console.error('Revalidation error:', e);
         return JSON.parse(localStorage.getItem(key) || '[]');
@@ -162,17 +164,21 @@ const Storage = {
     }
 
     const currentSync = this._debounceTimers[syncKey];
-    currentSync.timeoutId = setTimeout(async () => {
+    currentSync.timeoutId = setTimeout(() => {
       // Deleting from map BEFORE async sync starts ensures that if a new save
       // happens during sync, it starts a new debounced batch instead of re-using this resolving one.
       if (this._debounceTimers[syncKey] === currentSync) {
         delete this._debounceTimers[syncKey];
       }
-      try {
-        await this._syncTasksToCloud(currentSync.tasks);
-      } finally {
-        currentSync.resolve();
-      }
+
+      // Add to Serial Queue to prevent out-of-order writes
+      this._syncQueue = this._syncQueue.then(async () => {
+        try {
+          await this._syncTasksToCloud(currentSync.tasks);
+        } finally {
+          currentSync.resolve();
+        }
+      });
     }, 300);
 
     return currentSync.promise;
@@ -219,9 +225,17 @@ const Storage = {
       const session = await this.getSession();
       if (!session) return;
 
+      // Initialize Realtime subscription
+      this.initRealtime(session.user.id);
+
       // Check if we already migrated to the single-document model
       const migrationFlag = `neuroaark_migrated_v2_${session.user.id}`;
-      if (localStorage.getItem(migrationFlag) === 'true') return;
+      if (localStorage.getItem(migrationFlag) === 'true') {
+        // Even if migrated, always revalidate on login to get latest from other devices
+        const key = await this.getTasksKey();
+        await this._revalidateTasks(key);
+        return;
+      }
 
       console.log('Starting migration to single-document model...');
 
@@ -299,5 +313,43 @@ const Storage = {
     } catch (e) {
       console.error('Supabase syncOnLogin error:', e);
     }
+  },
+
+  /**
+   * Initializes Supabase Realtime for instant cross-device sync.
+   */
+  initRealtime(userId) {
+    if (this._realtimeChannel) return;
+
+    console.log('Initializing Supabase Realtime for user:', userId);
+    this._realtimeChannel = this.supabase
+      .channel(`public:tasks:user_id=eq.${userId}`)
+      .on(
+        'postgres_changes',
+        {
+          event: '*',
+          schema: 'public',
+          table: 'tasks',
+          filter: `user_id=eq.${userId}`
+        },
+        async (payload) => {
+          console.log('Realtime update received:', payload);
+          if (payload.new && payload.new.local_id === 'canonical_state') {
+            const cloudTasks = payload.new.nodes || [];
+            const key = await this.getTasksKey();
+
+            // Safety: Only update local if no pending saves
+            if (Object.keys(this._debounceTimers).length === 0) {
+              const localStr = localStorage.getItem(key);
+              const cloudStr = JSON.stringify(cloudTasks);
+              if (localStr !== cloudStr) {
+                localStorage.setItem(key, cloudStr);
+                window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
+              }
+            }
+          }
+        }
+      )
+      .subscribe();
   }
 };
