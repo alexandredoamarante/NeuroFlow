@@ -8,6 +8,7 @@ const Storage = {
   _debounceTimers: {},
   _revalidationPromises: {},
   _lastCloudFetch: 0,
+  _lastWrite: 0,
 
   async getSession() {
     const now = Date.now();
@@ -39,20 +40,16 @@ const Storage = {
 
   async getTasks() {
     const key = await this.getTasksKey();
-    const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
     const session = await this.getSession();
 
     if (session) {
-      const now = Date.now();
-      // If no cache OR it's been more than 5 seconds since last cloud fetch, wait for Supabase
-      if (localTasks.length === 0 || (now - this._lastCloudFetch > 5000)) {
-        return await this._revalidateTasks(key);
-      }
-      // Otherwise, return cache and revalidate in background
-      this._revalidateTasks(key);
+      // When logged in, Supabase is the primary source.
+      // ALWAYS wait for a fresh fetch to ensure cross-device consistency.
+      return await this._revalidateTasks(key);
     }
 
-    return localTasks;
+    // Offline / Anonymous mode
+    return JSON.parse(localStorage.getItem(key) || '[]');
   },
 
   async _revalidateTasks(key) {
@@ -80,9 +77,11 @@ const Storage = {
             nodes: t.nodes
           }));
 
-          // Safety: Don't overwrite if there are pending local changes (saves in progress)
-          if (Object.keys(this._debounceTimers).length > 0) {
-            console.log('Skipping cloud overwrite due to pending local saves');
+          const now = Date.now();
+          // Safety: Don't overwrite LocalStorage if a local write occurred very recently (within 3s)
+          // or if we have active debounced saves.
+          if (Object.keys(this._debounceTimers).length > 0 || (now - this._lastWrite < 3000)) {
+            console.log('Skipping cloud-to-local overwrite to protect pending local changes');
             return cloudTasks;
           }
 
@@ -120,27 +119,28 @@ const Storage = {
 
   async getTask(id) {
     const key = await this.getTasksKey();
-    const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
     const session = await this.getSession();
-
-    let task = localTasks.find(t => t.id === id);
+    const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
 
     if (session) {
-      if (task) {
-        // Found in cache, but trigger background revalidation
-        this._revalidateTasks(key);
+      const now = Date.now();
+      const task = localTasks.find(t => t.id === id);
+
+      // If found in local cache and the cache is very fresh (< 10s), return immediately
+      if (task && (now - this._lastCloudFetch < 10000)) {
         return task;
-      } else {
-        // Not in cache, MUST wait for cloud
-        const cloudTasks = await this._revalidateTasks(key);
-        return cloudTasks.find(t => t.id === id);
       }
+
+      // Otherwise, wait for cloud to ensure we have the latest version (e.g. from another device)
+      const cloudTasks = await this._revalidateTasks(key);
+      return cloudTasks.find(t => t.id === id);
     }
 
-    return task;
+    return localTasks.find(t => t.id === id);
   },
 
   async saveTask(task) {
+    this._lastWrite = Date.now();
     // 1. Update local cache immediately
     const key = await this.getTasksKey();
     const tasks = JSON.parse(localStorage.getItem(key) || '[]');
@@ -159,7 +159,7 @@ const Storage = {
     this._debounceTimers[task.id] = setTimeout(() => {
       this._syncTaskToCloud(task);
       delete this._debounceTimers[task.id];
-    }, 500); // 500ms debounce for better responsiveness
+    }, 300); // Faster debounce for cross-device sync
   },
 
   async _syncTaskToCloud(task) {
@@ -190,6 +190,7 @@ const Storage = {
   },
 
   async deleteTask(id) {
+    this._lastWrite = Date.now();
     // 1. Update local cache
     const key = await this.getTasksKey();
     const tasks = JSON.parse(localStorage.getItem(key) || '[]');

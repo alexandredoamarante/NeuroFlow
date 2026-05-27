@@ -24,10 +24,13 @@ const Highlights = {
     document.body.appendChild(btn);
     this.floatingBtn = btn;
 
-    // Use pointerdown for faster response on mobile
-    btn.onpointerdown = (e) => {
-      e.stopPropagation();
+    // Use onmousedown to prevent selection loss, but use onclick for final action
+    btn.onmousedown = (e) => {
       e.preventDefault();
+      e.stopPropagation();
+    };
+    btn.onclick = (e) => {
+      e.stopPropagation();
       this.createHighlight();
     };
   },
@@ -68,6 +71,7 @@ const Highlights = {
 
     popover.querySelector('.popover-close').onclick = () => {
       this.popover.style.display = 'none';
+      window.isInteractingWithHighlight = false;
     };
 
     popover.querySelector('#popoverUnmark').onclick = async () => await this.removeHighlight();
@@ -75,6 +79,7 @@ const Highlights = {
     popover.querySelector('#popoverCancel').onclick = () => {
       document.getElementById('popoverEditArea').style.display = 'none';
       document.getElementById('popoverComment').style.display = 'flex';
+      window.isInteractingWithHighlight = false;
     };
 
     popover.querySelectorAll('.color-opt').forEach(opt => {
@@ -132,6 +137,7 @@ const Highlights = {
       const highlightEl = e.target.closest('.note-highlight');
       if (highlightEl) {
         e.stopPropagation();
+        window.isInteractingWithHighlight = true;
         await this.openPopover(highlightEl);
       }
     });
@@ -400,6 +406,7 @@ const Highlights = {
     // Switch back to display mode
     document.getElementById('popoverEditArea').style.display = 'none';
     document.getElementById('popoverComment').style.display = 'flex';
+    window.isInteractingWithHighlight = false;
 
     this.renderComments();
   },
@@ -425,6 +432,7 @@ const Highlights = {
     Storage.saveTask(task); // Non-blocking
 
     this.popover.style.display = 'none';
+    window.isInteractingWithHighlight = false;
 
     // Re-render the tree
     const taskId = new URLSearchParams(window.location.search).get('id');
