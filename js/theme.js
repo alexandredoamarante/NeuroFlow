@@ -3,7 +3,7 @@ const html = document.documentElement;
 
 function setTheme(theme) {
   html.setAttribute('data-theme', theme);
-  localStorage.setItem('neuroflow_theme', theme);
+  localStorage.setItem('neuroaark_theme', theme);
 }
 
 themeToggle?.addEventListener('click', () => {
@@ -12,7 +12,7 @@ themeToggle?.addEventListener('click', () => {
 });
 
 // Init Theme
-const savedTheme = localStorage.getItem('neuroflow_theme') || 'dark';
+const savedTheme = localStorage.getItem('neuroaark_theme') || 'dark';
 setTheme(savedTheme);
 
 // Info Modal Logic
