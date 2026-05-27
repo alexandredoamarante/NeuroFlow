@@ -86,13 +86,18 @@ const Storage = {
         } else if (error && error.code === 'PGRST116') {
           // Row not found - first time user or legacy user needing migration
           return JSON.parse(localStorage.getItem(key) || '[]');
+        } else {
+          // Error fetching from cloud (e.g. network failure)
+          // Return local cache as fallback but DON'T overwrite anything
+          console.warn('Supabase fetch error, falling back to local cache:', error);
+          return JSON.parse(localStorage.getItem(key) || '[]');
         }
       } catch (e) {
         console.error('Revalidation error:', e);
+        return JSON.parse(localStorage.getItem(key) || '[]');
       } finally {
         delete this._revalidationPromises[key];
       }
-      return JSON.parse(localStorage.getItem(key) || '[]');
     })();
 
     return this._revalidationPromises[key];
@@ -149,21 +154,23 @@ const Storage = {
 
     if (this._debounceTimers[syncKey]) {
       clearTimeout(this._debounceTimers[syncKey].timeoutId);
+      this._debounceTimers[syncKey].tasks = tasks;
     } else {
       let resolve;
       const promise = new Promise(res => { resolve = res; });
-      this._debounceTimers[syncKey] = { promise, resolve };
+      this._debounceTimers[syncKey] = { promise, resolve, tasks };
     }
 
     const currentSync = this._debounceTimers[syncKey];
     currentSync.timeoutId = setTimeout(async () => {
+      // Deleting from map BEFORE async sync starts ensures that if a new save
+      // happens during sync, it starts a new debounced batch instead of re-using this resolving one.
+      if (this._debounceTimers[syncKey] === currentSync) {
+        delete this._debounceTimers[syncKey];
+      }
       try {
-        await this._syncTasksToCloud(tasks);
+        await this._syncTasksToCloud(currentSync.tasks);
       } finally {
-        // Only delete if we are still the active sync object
-        if (this._debounceTimers[syncKey] === currentSync) {
-          delete this._debounceTimers[syncKey];
-        }
         currentSync.resolve();
       }
     }, 300);
@@ -247,6 +254,7 @@ const Storage = {
       const { data: legacyCloudTasks, error: legacyError } = await this.supabase
         .from('tasks')
         .select('*')
+        .eq('user_id', session.user.id)
         .neq('local_id', 'canonical_state');
 
       let consolidatedTasks = [];
