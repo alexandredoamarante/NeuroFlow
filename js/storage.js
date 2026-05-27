@@ -237,8 +237,9 @@ const Storage = {
              this._hasCompletedInitialSync = true;
              return nodes;
           }
-          // Fallback to local on other errors but mark as synced to unblock the app
-          this._hasCompletedInitialSync = true;
+          // Transient failure: return local cache but do NOT set _hasCompletedInitialSync.
+          // This keeps the sync pipeline gated until a successful cloud check occurs.
+          console.warn('[HYDRATE] [TRACE] Hydration failed due to transient error. App remains un-synced.');
           return this._getLocalState(key).nodes;
         }
 
@@ -305,7 +306,7 @@ const Storage = {
 
       } catch (e) {
         console.error('[HYDRATE] [TRACE] Unexpected exception:', e);
-        this._hasCompletedInitialSync = true; // Still mark as completed to avoid infinite blocking
+        // Do not set _hasCompletedInitialSync on exception to prevent safe-overwrites
         return this._getLocalState(key).nodes;
       } finally {
         this._isHydrating = false;
@@ -462,17 +463,29 @@ const Storage = {
 
       if (fetchError) {
         console.error('[SAVE] [TRACE] Error fetching cloud state for version check:', fetchError.message);
+        // CRITICAL: If we can't verify the cloud state, we MUST abort the write to prevent accidental wipe.
+        console.error('[SAVE] [TRACE] ABORTING CLOUD WRITE: Version check failed. Retrying later via offline queue.');
+        this._queueOfflineMutation(tasks);
+        return;
       }
 
       const remoteVersion = cloudState?.version || 0;
+      const remoteNodes = cloudState?.nodes || [];
       let tasksToSave = tasks;
 
-      if (remoteVersion > this._currentVersion) {
+      // ANTI-WIPE HARD GUARD: If local is empty but cloud has data, ALWAYS merge.
+      // This protects against race conditions where local state is cleared/empty during initial sync.
+      const isLocalEmpty = !tasks || tasks.length === 0;
+      const isCloudPopulated = remoteNodes.length > 0;
+
+      if (isLocalEmpty && isCloudPopulated) {
+        console.warn('[SAVE] [TRACE] ANTI-WIPE GUARD: Local state is empty but cloud has data. Forcing Safety Merge.');
+        tasksToSave = this._reconcileTasks(remoteNodes, tasks);
+      } else if (remoteVersion > this._currentVersion) {
         console.warn('[SAVE] [TRACE] Conflict detected! Cloud is ahead. Remote:', remoteVersion, 'Local:', this._currentVersion);
 
         // RECONCILIATION: Attempt to merge local changes into remote state
         console.log('[SAVE] [TRACE] Attempting a safety merge of local tasks into remote tasks.');
-        const remoteNodes = cloudState.nodes || [];
         tasksToSave = this._reconcileTasks(remoteNodes, tasks);
 
         console.log('[SAVE] [TRACE] Merge complete. Proceeding with UPSERT of merged state.');
@@ -604,11 +617,17 @@ const Storage = {
           this._currentVersion = nextVersion;
           // Clean up legacy
           await this.supabase.from('tasks').delete().match({ user_id: session.user.id }).neq('local_id', 'canonical_state');
+          localStorage.setItem(migrationFlag, 'true');
+          this._hasCompletedInitialSync = true;
+      } else {
+          console.error('[MIGRATE] [TRACE] Migration UPSERT failed. Sync remaining gated.');
+          this._hasCompletedInitialSync = false;
       }
+    } else {
+        localStorage.setItem(migrationFlag, 'true');
+        this._hasCompletedInitialSync = true;
     }
 
-    localStorage.setItem(migrationFlag, 'true');
-    this._hasCompletedInitialSync = true;
     window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: consolidated }));
     return consolidated;
   },
@@ -649,16 +668,12 @@ const Storage = {
     this._pendingRealtimeUpdates = [];
     this._currentVersion = 0;
 
-    // Clear all local caches on logout to ensure no data leaks or split-brain state.
-    // This ensures that authenticated persistence relies strictly on cloud data for new sessions.
+    // Clear anonymous cache on logout.
     localStorage.removeItem('neuroaark_tasks_anonymous');
-    const keys = Object.keys(localStorage);
-    keys.forEach(k => {
-      if (k.startsWith('neuroaark_tasks_user_') || k.startsWith('neuroaark_offline_')) {
-        localStorage.removeItem(k);
-      }
-    });
-    console.log('[AUTH] [TRACE] Logout complete. Local state cleared.');
+    // CRITICAL RESILIENCE: DO NOT clear user keys on logout.
+    // This allows recovery/offline mode if re-login fails or returns empty.
+    // Authenticated users are protected by RLS and the 'canonical_state' document sync logic.
+    console.log('[AUTH] [TRACE] Logout complete. Cache preserved for resilience.');
   },
 
   async initRealtime(userId) {
