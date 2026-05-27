@@ -19,10 +19,15 @@ const Auth = {
 
     // 1. Check initial session state
     try {
-      const { data: { session } } = await Storage.supabase.auth.getSession();
-      this.updateUI(session);
+      const { data: { session }, error } = await Storage.supabase.auth.getSession();
+      if (error) throw error;
+
+      const isLoggedIn = session && session.user;
+      console.log('Initial session check:', isLoggedIn ? `Logged in as ${session.user.email}` : 'Not logged in');
+      this.updateUI(isLoggedIn ? session : null);
     } catch (err) {
       console.error('Error fetching initial session:', err);
+      this.updateUI(null);
     }
 
     // 2. Register a single robust event listener for both desktop and mobile
@@ -49,19 +54,24 @@ const Auth = {
 
     // 3. Listen for auth changes to sync state across the app
     Storage.supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth event:', event);
+      console.log('Auth state change detected:', event);
 
-      // Safety: treat session as logged in only if user exists
-      const isLoggedIn = session && session.user;
+      const isLoggedIn = !!(session && session.user);
       this.updateUI(isLoggedIn ? session : null);
 
       if (event === 'SIGNED_IN' && isLoggedIn) {
+        console.log('User signed in. Syncing and refreshing page...');
         await Storage.syncOnLogin();
+        // Force a page refresh after a small delay to ensure storage keys are updated
+        // and cloud data is fetched fresh for the newly logged-in user.
+        setTimeout(() => {
+          window.location.reload();
+        }, 500);
       }
 
       if (event === 'SIGNED_OUT') {
-        // Reset local app state if needed
-        console.log('User signed out');
+        console.log('User signed out globally.');
+        // UI is updated by updateUI(null) called above or in logout()
       }
     });
 
@@ -117,12 +127,16 @@ const Auth = {
   updateUI(session) {
     if (!authBtn || !authText) return;
 
-    if (session && session.user) {
+    const isLoggedIn = session && session.user;
+
+    if (isLoggedIn) {
       authText.textContent = 'Sair';
       authBtn.title = `Logado como ${session.user.email}`;
+      console.log('UI updated to: Sair');
     } else {
       authText.textContent = 'Entrar';
       authBtn.title = 'Entrar com Google';
+      console.log('UI updated to: Entrar');
     }
   }
 };

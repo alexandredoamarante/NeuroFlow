@@ -8,11 +8,12 @@ const Storage = {
     // Migration: neuroaark_tasks -> neuroaark_tasks_anonymous
     const legacyData = localStorage.getItem('neuroaark_tasks');
     if (legacyData && !localStorage.getItem('neuroaark_tasks_anonymous')) {
+      console.log('Migrating legacy localStorage data to anonymous key...');
       localStorage.setItem('neuroaark_tasks_anonymous', legacyData);
     }
 
     const { data: { session } } = await this.supabase.auth.getSession();
-    if (session) return `neuroaark_tasks_user_${session.user.id}`;
+    if (session && session.user) return `neuroaark_tasks_user_${session.user.id}`;
     return 'neuroaark_tasks_anonymous';
   },
 
@@ -22,13 +23,23 @@ const Storage = {
 
     try {
       const { data: { session } } = await this.supabase.auth.getSession();
-      if (session) {
+
+      // If logged in, cloud is the source of truth
+      if (session && session.user) {
+        console.log('Fetching tasks from Supabase...');
         const { data, error } = await this.supabase
           .from('tasks')
           .select('*')
           .order('created_at', { ascending: false });
 
-        if (!error && data) {
+        if (error) {
+          console.error('Supabase SELECT error:', error.message, error.details);
+          // Fallback to local cache if cloud fails
+          return localTasks;
+        }
+
+        if (data) {
+          console.log(`Successfully fetched ${data.length} tasks from Supabase.`);
           // Map Supabase data to app format
           const cloudTasks = data.map(t => ({
             id: t.local_id,
@@ -39,15 +50,16 @@ const Storage = {
             checklist: t.checklist,
             nodes: t.nodes
           }));
-          // Update local cache
+          // Update local cache to match cloud
           localStorage.setItem(key, JSON.stringify(cloudTasks));
           return cloudTasks;
         }
       }
     } catch (e) {
-      console.error('Supabase getTasks error:', e);
+      console.error('Supabase getTasks exception:', e);
     }
 
+    // Default for anonymous or fallback
     return localTasks;
   },
 
@@ -83,7 +95,7 @@ const Storage = {
     // 2. Update Supabase if logged in
     try {
       const { data: { session } } = await this.supabase.auth.getSession();
-      if (session) {
+      if (session && session.user) {
         const taskData = {
           user_id: session.user.id,
           local_id: task.id,
@@ -100,10 +112,14 @@ const Storage = {
           .from('tasks')
           .upsert(taskData, { onConflict: 'user_id,local_id' });
 
-        if (error) console.error('Error saving to Supabase:', error.message);
+        if (error) {
+          console.error('Supabase UPSERT error:', error.message, error.details, error.hint);
+        } else {
+          console.log(`Task ${task.id} synced to Supabase.`);
+        }
       }
     } catch (e) {
-      console.error('Supabase saveTask error:', e);
+      console.error('Supabase saveTask exception:', e);
     }
   },
 
@@ -117,16 +133,20 @@ const Storage = {
     // 2. Update Supabase
     try {
       const { data: { session } } = await this.supabase.auth.getSession();
-      if (session) {
+      if (session && session.user) {
         const { error } = await this.supabase
           .from('tasks')
           .delete()
           .match({ user_id: session.user.id, local_id: id });
 
-        if (error) console.error('Error deleting from Supabase:', error.message);
+        if (error) {
+          console.error('Supabase DELETE error:', error.message, error.details);
+        } else {
+          console.log(`Task ${id} deleted from Supabase.`);
+        }
       }
     } catch (e) {
-      console.error('Supabase deleteTask error:', e);
+      console.error('Supabase deleteTask exception:', e);
     }
   },
 
