@@ -1,4 +1,4 @@
-# NeuroFlow
+# neuroaark
 
 Uma ferramenta centralizada de organização e foco que une anotações hierárquicas, gestão de tempo e acompanhamento de tarefas.
 
