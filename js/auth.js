@@ -61,7 +61,7 @@ const Auth = {
 
       if (isLoggedIn) {
         // Initialize Realtime if logged in (covers SIGNED_IN and INITIAL_SESSION)
-        Storage.initRealtime(session.user.id);
+        await Storage.initRealtime(session.user.id);
       }
 
       if (event === 'SIGNED_IN' && isLoggedIn) {
@@ -71,9 +71,7 @@ const Auth = {
       if (event === 'SIGNED_OUT') {
         // Reset local app state if needed
         console.log('User signed out');
-        // Clear cache
-        Storage._session = null;
-        Storage._lastCheck = 0;
+        await Storage.clearSession();
       }
     });
 
@@ -109,6 +107,9 @@ const Auth = {
   async logout() {
     console.log('Initiating Logout...');
     try {
+      // Clear session data before signing out to ensure listeners are gone
+      await Storage.clearSession();
+
       const { error } = await Storage.supabase.auth.signOut({ scope: 'global' });
       if (error) throw error;
 

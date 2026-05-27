@@ -102,8 +102,8 @@ renderTasks();
 
 // Listen for background updates from Supabase
 window.addEventListener('tasksUpdated', () => {
-  // Only refresh if user is not currently selecting something
-  if (!window.getSelection().toString().trim()) {
+  // Only refresh if user is not currently selecting something and not syncing
+  if (!window.getSelection().toString().trim() && !Storage._isSyncing) {
     renderTasks();
   }
 });
