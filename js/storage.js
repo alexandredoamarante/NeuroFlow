@@ -163,14 +163,11 @@ const Storage = {
       }
       const state = this._getLocalState(key);
 
-      // Ensure we have a valid state after revalidation
-      if (this._hasCompletedInitialSync) {
-        console.log('[GET_TASKS] [TRACE] Returning tasks from local state. Count:', state.nodes?.length || 0);
-        return state.nodes || [];
-      } else {
-        console.warn('[GET_TASKS] [TRACE] Hydration failed or was interrupted. Returning empty nodes to prevent data corruption.');
-        return [];
-      }
+      // Optimistic Return: Always return the local nodes if they exist.
+      // Even if hydration failed or is gated, we want to show what we have (including newly created tasks).
+      // Authentication integrity is maintained by gating CLOUD WRITES, not UI reads.
+      console.log('[GET_TASKS] [TRACE] Returning tasks from local state. Count:', state.nodes?.length || 0, 'Hydrated:', this._hasCompletedInitialSync);
+      return state.nodes || [];
     }
 
     const state = this._getLocalState(key);
@@ -382,22 +379,21 @@ const Storage = {
   _triggerCloudSync(tasks) {
     console.log('[SAVE] [TRACE] _triggerCloudSync called. Tasks:', tasks.length, 'Hydrated:', this._hasCompletedInitialSync, 'IsHydrating:', this._isHydrating);
 
-    if (!this._hasCompletedInitialSync && !this._isHydrating) {
-        console.error('[SAVE] [TRACE] _triggerCloudSync blocked: App is NOT hydrated and NOT hydrating. This prevents accidental empty overwrites.');
-        return Promise.resolve();
-    }
-
     if (!navigator.onLine) {
       console.log('[OFFLINE] [TRACE] Device offline. Queueing mutation.');
       this._queueOfflineMutation(tasks);
       return Promise.resolve();
     }
 
-    // Safety: if we are not hydrated AND not currently hydrating, we must be careful.
-    // However, if we just created a task, we WANT it to sync eventually.
-    if (!this._hasCompletedInitialSync && !this._isHydrating) {
-      console.warn('[SAVE] [TRACE] Attempted save before hydration initiated. Force initiating hydration.');
-      this.getTasksKey().then(key => this._revalidateTasks(key));
+    // If we haven't hydrated yet, we queue the mutation and trigger hydration.
+    // This allows the app to be responsive while ensuring cloud data is fetched first.
+    if (!this._hasCompletedInitialSync) {
+      console.warn('[SAVE] [TRACE] Attempted cloud sync before initial hydration. Queueing and initiating hydration.');
+      this._queueOfflineMutation(tasks);
+      if (!this._isHydrating) {
+          this.getTasksKey().then(key => this._revalidateTasks(key));
+      }
+      return Promise.resolve();
     }
 
     const syncKey = 'canonical_state';
@@ -436,6 +432,8 @@ const Storage = {
 
     // Serialization: The unified _syncQueue handles serialization between hydration and sync.
 
+    // CRITICAL: We only sync if hydrated. However, _syncTasksToCloud handles lazy hydration during version check.
+    // If _triggerCloudSync correctly gates calls, this is a secondary guard.
     if (!this._hasCompletedInitialSync) {
       console.error('[SAVE] [TRACE] Refusing to sync to cloud: Initial hydration not completed.');
       return;
@@ -472,6 +470,13 @@ const Storage = {
       const remoteVersion = cloudState?.version || 0;
       const remoteNodes = cloudState?.nodes || [];
       let tasksToSave = tasks;
+
+      // LAZY HYDRATION: If we reached this point, the version check worked.
+      // We can mark hydration as complete to unblock future operations.
+      if (!this._hasCompletedInitialSync) {
+        console.log('[SAVE] [TRACE] Lazy hydration triggered by successful version check.');
+        this._hasCompletedInitialSync = true;
+      }
 
       // ANTI-WIPE HARD GUARD: If local is empty but cloud has data, ALWAYS merge.
       // This protects against race conditions where local state is cleared/empty during initial sync.

@@ -101,4 +101,40 @@ test.describe('Task Creation Regression', () => {
     const taskCard = page.locator('.task-card-title', { hasText: 'Task After Failed Hydration' });
     await expect(taskCard).toBeVisible({ timeout: 10000 });
   });
+
+  test('Lazy Hydration: Task persists even if initial hydration fetch was never called', async ({ page }) => {
+    // 1. Intercept hydration fetch to simulate it hanging or being extremely slow
+    // We don't fulfill it, effectively keeping hydration incomplete
+    let hydrationCalled = false;
+    await page.route('**/rest/v1/tasks?user_id=eq.user-456&local_id=eq.canonical_state&select=*', async route => {
+        hydrationCalled = true;
+        // Don't respond yet
+    });
+
+    await page.goto(BASE_URL);
+
+    // 2. Create task.
+    // This should work because getTasks is optimistic and _triggerCloudSync will queue it.
+    await page.fill('#taskNameInput', 'Lazy Task');
+    await page.click('#createTaskBtn');
+
+    // 3. UI should show the task
+    await expect(page.locator('.task-card-title', { hasText: 'Lazy Task' })).toBeVisible();
+
+    // 4. Now fulfill the version check call that _syncTasksToCloud will make
+    await page.route('**/rest/v1/tasks?user_id=eq.user-456&local_id=eq.canonical_state&select=version%2Cupdated_at%2Cnodes', async route => {
+        route.fulfill({
+            status: 200,
+            json: { version: 1, nodes: [], updated_at: new Date().toISOString() }
+        });
+    });
+
+    // We need to trigger the cloud sync if it was queued
+    // In the real app, this happens after the 1500ms debounce
+    await page.waitForTimeout(2000);
+
+    // 5. Verify the app eventually marks itself as hydrated
+    const isHydrated = await page.evaluate(() => Storage._hasCompletedInitialSync);
+    expect(isHydrated).toBeTruthy();
+  });
 });
