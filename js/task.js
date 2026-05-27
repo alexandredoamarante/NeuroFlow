@@ -122,11 +122,16 @@ async function deleteCheck(index) {
 addCheckBtn?.addEventListener('click', async () => {
   const text = checkInput.value.trim();
   if (!text) return;
-  if (!currentTask.checklist) currentTask.checklist = [];
-  currentTask.checklist.push({ text, done: false });
-  await syncAndSaveTask();
-  checkInput.value = '';
-  renderChecklist();
+  addCheckBtn.disabled = true;
+  try {
+    if (!currentTask.checklist) currentTask.checklist = [];
+    currentTask.checklist.push({ text, done: false });
+    await syncAndSaveTask();
+    checkInput.value = '';
+    renderChecklist();
+  } finally {
+    addCheckBtn.disabled = false;
+  }
 });
 
 // Delete Task

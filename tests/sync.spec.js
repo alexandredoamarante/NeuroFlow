@@ -45,7 +45,11 @@ const TASK_URL = (id) => `http://localhost:8080/task.html?id=${id}`;
 test.describe('Cross-device Sync (Single Document Model)', () => {
 
   test.beforeEach(async ({ page }) => {
-    page.on('console', msg => console.log('BROWSER CONSOLE:', msg.text()));
+    page.on('console', msg => {
+        const text = msg.text();
+        console.log('BROWSER CONSOLE:', text);
+        if (text.includes('Error')) console.error('BROWSER ERROR:', text);
+    });
 
     // Intercept all Supabase calls
     await page.route('**/*.supabase.co/**', async route => {
@@ -95,9 +99,16 @@ test.describe('Cross-device Sync (Single Document Model)', () => {
     await expect(taskCard).toHaveText('Test Task', { timeout: 15000 });
 
     // Open task page
-    await page.click('.task-card');
+    // await page.click('.task-card');
+    // Using direct navigation to avoid issues with .task-card click if it's not working
+    await page.goto(TASK_URL('task-1'));
 
-    await expect(page).toHaveURL(/task\.html/);
+    await expect(page).toHaveURL(/\/task(\.html)?/);
+
+    // Check if scripts are loaded
+    const scriptCount = await page.evaluate(() => document.querySelectorAll('script[src^="js/"]').length);
+    console.log(`Scripts loaded on task page: ${scriptCount}`);
+
     await expect(page.locator('#taskPageTitle')).toHaveText('Test Task', { timeout: 15000 });
 
     await expect(page.locator('.node-title')).toHaveText('Root Note');

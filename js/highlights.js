@@ -269,7 +269,7 @@ const Highlights = {
     };
 
     node.highlights.push(newHighlight);
-    Storage.saveTask(task); // Non-blocking
+    await Storage.saveTask(task);
 
     this.floatingBtn.style.display = 'none';
     window.getSelection().removeAllRanges();
@@ -401,7 +401,7 @@ const Highlights = {
     const text = input.value.trim();
 
     this.activeHighlight.highlight.comment = text;
-    Storage.saveTask(this.activeHighlight.task); // Non-blocking
+    await Storage.saveTask(this.activeHighlight.task);
 
     // Switch back to display mode
     document.getElementById('popoverEditArea').style.display = 'none';
@@ -413,7 +413,7 @@ const Highlights = {
 
   async updateColor(color) {
     this.activeHighlight.highlight.color = color;
-    Storage.saveTask(this.activeHighlight.task); // Non-blocking
+    await Storage.saveTask(this.activeHighlight.task);
     this.renderComments();
 
     // Re-render the tree to update the visual highlight color
@@ -429,7 +429,7 @@ const Highlights = {
 
     const { node, highlight, task } = this.activeHighlight;
     node.highlights = node.highlights.filter(h => h.id !== highlight.id);
-    Storage.saveTask(task); // Non-blocking
+    await Storage.saveTask(task);
 
     this.popover.style.display = 'none';
     window.isInteractingWithHighlight = false;
