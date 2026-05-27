@@ -101,4 +101,9 @@ createTaskBtn?.addEventListener('click', async () => {
 renderTasks();
 
 // Listen for background updates from Supabase
-window.addEventListener('tasksUpdated', () => renderTasks());
+window.addEventListener('tasksUpdated', () => {
+  // Only refresh if user is not currently selecting something
+  if (!window.getSelection().toString().trim()) {
+    renderTasks();
+  }
+});

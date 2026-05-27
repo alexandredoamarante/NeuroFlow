@@ -147,6 +147,11 @@ init();
 
 // Listen for background updates from Supabase
 window.addEventListener('tasksUpdated', async (e) => {
+  // Prevent refresh if user is currently selecting text or interacting with a highlight popover
+  if (window.getSelection().toString().trim() || window.isInteractingWithHighlight) {
+    return;
+  }
+
   const updatedTasks = e.detail;
   const urlParams = new URLSearchParams(window.location.search);
   const id = urlParams.get('id');
