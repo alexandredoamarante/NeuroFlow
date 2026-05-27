@@ -13,6 +13,20 @@ const Storage = {
   _isSyncing: false,
   _offlineQueue: [],
 
+  /**
+   * Helper to append a task to the serial sync queue.
+   * Ensures the queue never remains in a rejected state.
+   */
+  _enqueue(taskFn) {
+    this._syncQueue = this._syncQueue
+      .then(taskFn)
+      .catch(err => {
+        console.error('[QUEUE] [ERROR] Task in sync queue failed:', err);
+        return null; // Ensure the queue remains functional
+      });
+    return this._syncQueue;
+  },
+
   // Sync lifecycle state
   _hasCompletedInitialSync: false,
   _isHydrating: false,
@@ -191,7 +205,7 @@ const Storage = {
     console.log('[HYDRATE] [TRACE] _revalidateTasks queuing for:', key);
     this._revalidationPromises[key] = (async () => {
       // Chain hydration to the unified sync queue to ensure serial access to Supabase
-      return this._syncQueue = this._syncQueue.then(async () => {
+      return this._enqueue(async () => {
         console.log('[HYDRATE] [TRACE] Execution started in sync queue for:', key);
         this._isHydrating = true;
         try {
@@ -215,10 +229,16 @@ const Storage = {
         if (error) {
           console.error('[HYDRATE] [TRACE] Supabase error:', error.message, error.code);
           // If it's not a "not found" error, we might want to retry, but for now we fallback to local.
-          if (error.code === 'PGRST116') { // Not found
-             console.log('[HYDRATE] [TRACE] Canonical state missing in cloud.');
-             return await this._handleMissingCloudData(session, key);
+          // Note: maybeSingle() returns data: null and no error for 0 rows.
+          // PGRST116 is specifically for "0 or 1 rows expected but more found" or "no rows found" in some configurations.
+          if (error.code === 'PGRST116') {
+             console.log('[HYDRATE] [TRACE] Canonical state missing in cloud (PGRST116).');
+             const nodes = await this._handleMissingCloudData(session, key);
+             this._hasCompletedInitialSync = true;
+             return nodes;
           }
+          // Fallback to local on other errors but mark as synced to unblock the app
+          this._hasCompletedInitialSync = true;
           return this._getLocalState(key).nodes;
         }
 
@@ -285,6 +305,7 @@ const Storage = {
 
       } catch (e) {
         console.error('[HYDRATE] [TRACE] Unexpected exception:', e);
+        this._hasCompletedInitialSync = true; // Still mark as completed to avoid infinite blocking
         return this._getLocalState(key).nodes;
       } finally {
         this._isHydrating = false;
@@ -311,7 +332,7 @@ const Storage = {
     const key = await this.getTasksKey();
 
     const session = await this.getSession();
-    if (session && (!this._hasCompletedInitialSync || this._isHydrating)) {
+    if (session && !this._hasCompletedInitialSync) {
         console.warn('[SAVE] [TRACE] saveTask: Waiting for hydration to complete before local update.');
         await this._revalidateTasks(key);
     }
@@ -338,7 +359,7 @@ const Storage = {
     const key = await this.getTasksKey();
 
     const session = await this.getSession();
-    if (session && (!this._hasCompletedInitialSync || this._isHydrating)) {
+    if (session && !this._hasCompletedInitialSync) {
         console.warn('[SAVE] [TRACE] deleteTask: Waiting for hydration to complete before local update.');
         await this._revalidateTasks(key);
     }
@@ -391,7 +412,7 @@ const Storage = {
     const currentSync = this._debounceTimers[syncKey];
     currentSync.timeoutId = setTimeout(() => {
       if (this._debounceTimers[syncKey] === currentSync) delete this._debounceTimers[syncKey];
-      this._syncQueue = this._syncQueue.then(async () => {
+      this._enqueue(async () => {
         try {
           await this._syncTasksToCloud(currentSync.tasks);
         } finally {
