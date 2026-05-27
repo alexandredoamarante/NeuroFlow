@@ -1,0 +1,25 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 tests/per-task.spec.js:38:7 › Per-Task Model Persistence › Creation: Task is saved as a separate row in Supabase with correct user_id (30.1s)
+
+
+  1) tests/per-task.spec.js:38:7 › Per-Task Model Persistence › Creation: Task is saved as a separate row in Supabase with correct user_id
+
+    [31mTest timeout of 30000ms exceeded.[39m
+
+    Error: page.waitForResponse: Test timeout of 30000ms exceeded.
+
+      61 |
+      62 |     // Wait for the network request instead of just the log
+    > 63 |     await page.waitForResponse(resp =>
+         |                ^
+      64 |         resp.url().includes('/rest/v1/tasks') &&
+      65 |         resp.request().method() === 'POST'
+      66 |     );
+        at /app/tests/per-task.spec.js:63:16
+
+    Error Context: test-results/tests-per-task-Per-Task-Mo-48164-pabase-with-correct-user-id/error-context.md
+
+  1 failed
+    tests/per-task.spec.js:38:7 › Per-Task Model Persistence › Creation: Task is saved as a separate row in Supabase with correct user_id
