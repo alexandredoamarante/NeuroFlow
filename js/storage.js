@@ -145,8 +145,6 @@ const Storage = {
     const session = await this.getSession();
     const key = await this.getTasksKey();
 
-    console.log('[GET_TASKS] [TRACE] Session:', !!session, 'Key:', key, 'Hydrated:', this._hasCompletedInitialSync, 'Hydrating:', !!this._revalidationPromises[key]);
-
     if (session && !this._offlineListenerAdded) {
       window.addEventListener('online', () => this._flushOfflineQueue());
       this._offlineQueue = JSON.parse(localStorage.getItem(`neuroaark_offline_${session.user.id}`) || '[]');
@@ -155,23 +153,24 @@ const Storage = {
     }
 
     if (session) {
-      // BLOCKING HYDRATION: If we are not hydrated OR currently hydrating, we MUST wait.
-      // For authenticated users, we never return stale local data before cloud revalidation.
+      // BLOCKING HYDRATION: For authenticated users, cloud is the single source of truth.
+      // We must ensure hydration completes before returning data.
       if (!this._hasCompletedInitialSync || this._revalidationPromises[key]) {
         console.log('[HYDRATE] [TRACE] getTasks: Waiting for hydration.');
         await this._revalidateTasks(key);
       }
-      const state = this._getLocalState(key);
 
-      // Optimistic Return: Always return the local nodes if they exist.
-      // Even if hydration failed or is gated, we want to show what we have (including newly created tasks).
-      // Authentication integrity is maintained by gating CLOUD WRITES, not UI reads.
-      console.log('[GET_TASKS] [TRACE] Returning tasks from local state. Count:', state.nodes?.length || 0, 'Hydrated:', this._hasCompletedInitialSync);
+      // If hydration failed even after waiting, we return empty to avoid stale/divergent local data.
+      if (!this._hasCompletedInitialSync) {
+        console.warn('[GET_TASKS] [TRACE] Hydration failed. Returning empty list for safety.');
+        return [];
+      }
+
+      const state = this._getLocalState(key);
       return state.nodes || [];
     }
 
     const state = this._getLocalState(key);
-    console.log('[GET_TASKS] [TRACE] Returning tasks (anonymous). Count:', state.nodes?.length || 0);
     return state.nodes || [];
   },
 
@@ -183,6 +182,11 @@ const Storage = {
     if (session && (!this._hasCompletedInitialSync || this._revalidationPromises[key])) {
       console.log('[HYDRATE] [TRACE] getTask: Waiting for hydration.');
       await this._revalidateTasks(key);
+    }
+
+    if (session && !this._hasCompletedInitialSync) {
+      console.warn('[GET_TASK] [TRACE] Hydration failed/pending. Returning null.');
+      return null;
     }
 
     const state = this._getLocalState(key);
@@ -240,58 +244,22 @@ const Storage = {
           return this._getLocalState(key).nodes;
         }
 
-        const localState = this._getLocalState(key);
         if (data) {
           console.log('[HYDRATE] [TRACE] Cloud state found:', { version: data.version, t: data.updated_at, nodes: data.nodes?.length });
 
-          const remoteVersion = data.version || 0;
-          const remoteUpdatedAt = data.updated_at ? new Date(data.updated_at).getTime() : 0;
-          const localUpdatedAt = localState.updated_at ? new Date(localState.updated_at).getTime() : 0;
-          const localVersion = localState.version || 0;
-
-          // FORCE CLOUD AUTHORITY: Remote wins unless local is strictly newer AND has more data.
-          let shouldAdoptRemote = false;
-
-          if (remoteVersion > localVersion) {
-            shouldAdoptRemote = true;
-            console.log('[HYDRATE] [TRACE] Choice: Remote version is ahead.');
-          } else if (remoteVersion === localVersion) {
-            if (remoteUpdatedAt >= localUpdatedAt) {
-              shouldAdoptRemote = true;
-              console.log('[HYDRATE] [TRACE] Choice: Remote timestamp is newer or equal.');
-            } else {
-              console.log('[HYDRATE] [TRACE] Choice: Local timestamp is newer.');
-            }
-          }
-
-          // HARD GUARD: Remote exists but Local is empty? ALWAYS adopt Remote.
-          if (localState.nodes.length === 0 && data.nodes?.length > 0) {
-              console.warn('[HYDRATE] [TRACE] HARD GUARD: Local is empty. Adopting Cloud.');
-              shouldAdoptRemote = true;
-          }
-
-          // HARD GUARD: Remote exists but Local is legacy? ALWAYS adopt Remote.
-          if (localState.version === 0 && !localState.updated_at && data.nodes?.length > 0) {
-              console.warn('[HYDRATE] [TRACE] HARD GUARD: Local is legacy. Adopting Cloud.');
-              shouldAdoptRemote = true;
-          }
-
-          if (shouldAdoptRemote) {
-            console.log('[HYDRATE] [TRACE] Adopting Remote State.');
-            const newState = {
-              nodes: data.nodes || [],
-              version: remoteVersion,
-              updated_at: data.updated_at,
-              device_id: data.device_id
-            };
-            this._currentVersion = remoteVersion;
-            this._lastUpdatedAt = data.updated_at;
-            this._setLocalState(key, newState);
-            window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: newState.nodes }));
-          } else {
-            console.log('[HYDRATE] [TRACE] Keeping Local State. Version:', localVersion);
-            this._currentVersion = Math.max(this._currentVersion, remoteVersion, localVersion);
-          }
+          // CLOUD AUTHORITY: For initial hydration of authenticated users, Cloud ALWAYS wins.
+          // This ensures device parity and prevents stale local data from clobbering remote state.
+          console.log('[HYDRATE] [TRACE] Adopting Remote State (Cloud Authority).');
+          const newState = {
+            nodes: data.nodes || [],
+            version: data.version || 0,
+            updated_at: data.updated_at,
+            device_id: data.device_id
+          };
+          this._currentVersion = data.version || 0;
+          this._lastUpdatedAt = data.updated_at;
+          this._setLocalState(key, newState);
+          window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: newState.nodes }));
         } else {
           console.log('[HYDRATE] Cloud returned empty data (no row).');
           return await this._handleMissingCloudData(session, key);
@@ -328,97 +296,91 @@ const Storage = {
   async saveTask(task) {
     console.log('[SAVE] [TRACE] saveTask called for task:', task.id);
     const key = await this.getTasksKey();
-
     const session = await this.getSession();
-    if (session && !this._hasCompletedInitialSync) {
-        console.warn('[SAVE] [TRACE] saveTask: Waiting for hydration to complete before local update.');
+
+    if (session) {
+      // For authenticated users, cloud is the authority.
+      // We MUST ensure hydration is complete to prevent data divergence.
+      if (!this._hasCompletedInitialSync || this._revalidationPromises[key]) {
         await this._revalidateTasks(key);
+      }
+
+      if (!this._hasCompletedInitialSync) {
+        throw new Error('Cloud persistence unavailable: Hydration failed.');
+      }
+
+      const state = this._getLocalState(key);
+      const tasks = [...(state.nodes || [])];
+      const index = tasks.findIndex(t => t.id === task.id);
+      if (index > -1) tasks[index] = task;
+      else tasks.push(task);
+
+      // Update local cache immediately for UI responsiveness,
+      // but the promise only resolves once cloud sync is confirmed.
+      this._setLocalState(key, {
+        ...state,
+        nodes: tasks,
+        updated_at: new Date().toISOString(),
+        device_id: this.getDeviceId()
+      });
+
+      return await this._enqueue(() => this._syncTasksToCloud(tasks));
+    } else {
+      // Anonymous mode: local-only
+      const state = this._getLocalState(key);
+      const tasks = [...(state.nodes || [])];
+      const index = tasks.findIndex(t => t.id === task.id);
+      if (index > -1) tasks[index] = task;
+      else tasks.push(task);
+
+      this._setLocalState(key, {
+        ...state,
+        nodes: tasks,
+        updated_at: new Date().toISOString(),
+        device_id: this.getDeviceId()
+      });
+      return Promise.resolve();
     }
-
-    const state = this._getLocalState(key);
-    const tasks = state.nodes || [];
-    const index = tasks.findIndex(t => t.id === task.id);
-    if (index > -1) tasks[index] = task;
-    else tasks.push(task);
-
-    const newState = {
-      ...state,
-      nodes: tasks,
-      updated_at: new Date().toISOString(),
-      device_id: this.getDeviceId()
-    };
-    this._setLocalState(key, newState);
-
-    if (session) return await this._triggerCloudSync(tasks);
   },
 
   async deleteTask(id) {
     console.log('[SAVE] [TRACE] deleteTask called for task:', id);
     const key = await this.getTasksKey();
-
     const session = await this.getSession();
-    if (session && !this._hasCompletedInitialSync) {
-        console.warn('[SAVE] [TRACE] deleteTask: Waiting for hydration to complete before local update.');
+
+    if (session) {
+      if (!this._hasCompletedInitialSync || this._revalidationPromises[key]) {
         await this._revalidateTasks(key);
-    }
-
-    const state = this._getLocalState(key);
-    const filtered = (state.nodes || []).filter(t => t.id !== id);
-
-    const newState = {
-      ...state,
-      nodes: filtered,
-      updated_at: new Date().toISOString(),
-      device_id: this.getDeviceId()
-    };
-    this._setLocalState(key, newState);
-
-    if (session) return await this._triggerCloudSync(filtered);
-  },
-
-  _triggerCloudSync(tasks) {
-    console.log('[SAVE] [TRACE] _triggerCloudSync called. Tasks:', tasks.length, 'Hydrated:', this._hasCompletedInitialSync, 'IsHydrating:', this._isHydrating);
-
-    if (!navigator.onLine) {
-      console.log('[OFFLINE] [TRACE] Device offline. Queueing mutation.');
-      this._queueOfflineMutation(tasks);
-      return Promise.resolve();
-    }
-
-    // If we haven't hydrated yet, we queue the mutation and trigger hydration.
-    // This allows the app to be responsive while ensuring cloud data is fetched first.
-    if (!this._hasCompletedInitialSync) {
-      console.warn('[SAVE] [TRACE] Attempted cloud sync before initial hydration. Queueing and initiating hydration.');
-      this._queueOfflineMutation(tasks);
-      if (!this._isHydrating) {
-          this.getTasksKey().then(key => this._revalidateTasks(key));
       }
+
+      if (!this._hasCompletedInitialSync) {
+        throw new Error('Cloud persistence unavailable: Hydration failed.');
+      }
+
+      const state = this._getLocalState(key);
+      const filtered = (state.nodes || []).filter(t => t.id !== id);
+
+      this._setLocalState(key, {
+        ...state,
+        nodes: filtered,
+        updated_at: new Date().toISOString(),
+        device_id: this.getDeviceId()
+      });
+
+      return await this._enqueue(() => this._syncTasksToCloud(filtered));
+    } else {
+      // Anonymous mode: local-only
+      const state = this._getLocalState(key);
+      const filtered = (state.nodes || []).filter(t => t.id !== id);
+
+      this._setLocalState(key, {
+        ...state,
+        nodes: filtered,
+        updated_at: new Date().toISOString(),
+        device_id: this.getDeviceId()
+      });
       return Promise.resolve();
     }
-
-    const syncKey = 'canonical_state';
-    if (this._debounceTimers[syncKey]) {
-      clearTimeout(this._debounceTimers[syncKey].timeoutId);
-      this._debounceTimers[syncKey].tasks = tasks;
-    } else {
-      let resolve;
-      const promise = new Promise(res => { resolve = res; });
-      this._debounceTimers[syncKey] = { promise, resolve, tasks };
-    }
-
-    const currentSync = this._debounceTimers[syncKey];
-    currentSync.timeoutId = setTimeout(() => {
-      if (this._debounceTimers[syncKey] === currentSync) delete this._debounceTimers[syncKey];
-      this._enqueue(async () => {
-        try {
-          await this._syncTasksToCloud(currentSync.tasks);
-        } finally {
-          currentSync.resolve();
-        }
-      });
-    }, 1500);
-
-    return currentSync.promise;
   },
 
   async _syncTasksToCloud(tasks) {
@@ -433,7 +395,6 @@ const Storage = {
     // Serialization: The unified _syncQueue handles serialization between hydration and sync.
 
     // CRITICAL: We only sync if hydrated. However, _syncTasksToCloud handles lazy hydration during version check.
-    // If _triggerCloudSync correctly gates calls, this is a secondary guard.
     if (!this._hasCompletedInitialSync) {
       console.error('[SAVE] [TRACE] Refusing to sync to cloud: Initial hydration not completed.');
       return;
@@ -778,7 +739,7 @@ const Storage = {
     const session = await this.getSession();
     if (session) {
       localStorage.removeItem(`neuroaark_offline_${session.user.id}`);
-      await this._triggerCloudSync(tasks);
+      await this._enqueue(() => this._syncTasksToCloud(tasks));
     }
   },
 
