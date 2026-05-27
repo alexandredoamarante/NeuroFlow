@@ -59,6 +59,11 @@ const Auth = {
       const isLoggedIn = session && session.user;
       this.updateUI(isLoggedIn ? session : null);
 
+      if (isLoggedIn) {
+        // Initialize Realtime if logged in (covers SIGNED_IN and INITIAL_SESSION)
+        Storage.initRealtime(session.user.id);
+      }
+
       if (event === 'SIGNED_IN' && isLoggedIn) {
         await Storage.syncOnLogin();
       }

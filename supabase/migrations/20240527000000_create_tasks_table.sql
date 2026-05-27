@@ -7,16 +7,14 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     local_id TEXT NOT NULL,
     nodes JSONB NOT NULL DEFAULT '[]'::jsonb,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+    updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+    CONSTRAINT tasks_user_id_local_id_key UNIQUE (user_id, local_id)
 );
 
 -- Add comments for documentation
 COMMENT ON TABLE public.tasks IS 'Stores user tasks and notes in a single-document canonical state model.';
 COMMENT ON COLUMN public.tasks.local_id IS 'Identifier for the state type, e.g., "canonical_state".';
 COMMENT ON COLUMN public.tasks.nodes IS 'JSONB array containing the full hierarchy of tasks and notes.';
-
--- Create unique index to ensure one canonical_state per user
-CREATE UNIQUE INDEX IF NOT EXISTS tasks_user_id_local_id_idx ON public.tasks (user_id, local_id);
 
 -- Enable Row Level Security
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;
@@ -57,3 +55,6 @@ CREATE TRIGGER set_updated_at
     BEFORE UPDATE ON public.tasks
     FOR EACH ROW
     EXECUTE FUNCTION public.handle_updated_at();
+
+-- Enable Realtime for the tasks table
+ALTER PUBLICATION supabase_realtime ADD TABLE tasks;
