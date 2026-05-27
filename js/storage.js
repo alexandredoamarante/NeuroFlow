@@ -61,6 +61,7 @@ const Storage = {
         const { data, error } = await this.supabase
           .from('tasks')
           .select('*')
+          .eq('user_id', session.user.id)
           .eq('local_id', 'canonical_state')
           .single();
 
@@ -71,7 +72,7 @@ const Storage = {
           // Safety: Don't overwrite LocalStorage if we have active debounced saves.
           if (Object.keys(this._debounceTimers).length > 0) {
             console.log('Skipping cloud-to-local overwrite to protect pending local changes');
-            return cloudTasks;
+            return JSON.parse(localStorage.getItem(key) || '[]');
           }
 
           const localStr = localStorage.getItem(key);
@@ -103,7 +104,7 @@ const Storage = {
     const session = await this.getSession();
     if (session) {
       // In single-document model, saveTasks updates the full state
-      this._triggerCloudSync(tasks);
+      return await this._triggerCloudSync(tasks);
     }
   },
 
@@ -115,7 +116,10 @@ const Storage = {
     if (session) {
       // For logged-in users, ALWAYS wait for cloud to ensure we have the latest version (e.g. from another device)
       const cloudTasks = await this._revalidateTasks(key);
-      return cloudTasks.find(t => t.id === id);
+      const found = cloudTasks.find(t => t.id === id);
+      if (found) return found;
+      // Fallback to local if not found in cloud yet (maybe newly created)
+      return localTasks.find(t => t.id === id);
     }
 
     return localTasks.find(t => t.id === id);
@@ -136,19 +140,35 @@ const Storage = {
     // 2. Update Supabase if logged in (non-blocking with debounce)
     const session = await this.getSession();
     if (session) {
-      this._triggerCloudSync(tasks);
+      return await this._triggerCloudSync(tasks);
     }
   },
 
   _triggerCloudSync(tasks) {
     const syncKey = 'canonical_state';
+
     if (this._debounceTimers[syncKey]) {
-      clearTimeout(this._debounceTimers[syncKey]);
+      clearTimeout(this._debounceTimers[syncKey].timeoutId);
+    } else {
+      let resolve;
+      const promise = new Promise(res => { resolve = res; });
+      this._debounceTimers[syncKey] = { promise, resolve };
     }
-    this._debounceTimers[syncKey] = setTimeout(() => {
-      this._syncTasksToCloud(tasks);
-      delete this._debounceTimers[syncKey];
+
+    const currentSync = this._debounceTimers[syncKey];
+    currentSync.timeoutId = setTimeout(async () => {
+      try {
+        await this._syncTasksToCloud(tasks);
+      } finally {
+        // Only delete if we are still the active sync object
+        if (this._debounceTimers[syncKey] === currentSync) {
+          delete this._debounceTimers[syncKey];
+        }
+        currentSync.resolve();
+      }
     }, 300);
+
+    return currentSync.promise;
   },
 
   async _syncTasksToCloud(tasks) {
@@ -183,7 +203,7 @@ const Storage = {
     // 2. Update Supabase (non-blocking)
     const session = await this.getSession();
     if (session) {
-      this._triggerCloudSync(filtered);
+      return await this._triggerCloudSync(filtered);
     }
   },
 
@@ -202,6 +222,7 @@ const Storage = {
       const { data: canonical, error: fetchError } = await this.supabase
         .from('tasks')
         .select('*')
+        .eq('user_id', session.user.id)
         .eq('local_id', 'canonical_state')
         .maybeSingle();
 
@@ -212,7 +233,13 @@ const Storage = {
 
       // If canonical state already exists, we consider migration done for cloud
       if (canonical) {
+        const key = await this.getTasksKey();
+        const cloudTasks = canonical.nodes || [];
+        localStorage.setItem(key, JSON.stringify(cloudTasks));
         localStorage.setItem(migrationFlag, 'true');
+
+        // Refresh view
+        window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
         return;
       }
 

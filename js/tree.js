@@ -308,7 +308,7 @@ async function saveCurrentNodes() {
   const task = await Storage.getTask(id);
   if (task) {
     task.nodes = window.currentNodes;
-    Storage.saveTask(task); // Non-blocking
+    await Storage.saveTask(task);
   }
 }
 
