@@ -1,0 +1,26 @@
+
+Running 1 test using 1 worker
+
+  ✘  1 tests/per-task.spec.js:38:7 › Per-Task Model Persistence › Creation: Task is saved as a separate row in Supabase with correct user_id (844ms)
+
+
+  1) tests/per-task.spec.js:38:7 › Per-Task Model Persistence › Creation: Task is saved as a separate row in Supabase with correct user_id
+
+    Error: [2mexpect([22m[31mreceived[39m[2m).[22mtoBe[2m([22m[32mexpected[39m[2m) // Object.is equality[22m
+
+    Expected: [32m"user-per-task"[39m
+    Received: [31mundefined[39m
+
+      71 |     expect(upsertLog).toBeDefined();
+      72 |     expect(upsertLog.payload.nodes.name).toBe('Per Task Test');
+    > 73 |     expect(upsertLog.payload.user_id).toBe(mockSession.user.id);
+         |                                       ^
+      74 |   });
+      75 |
+      76 |   test('Migration: Legacy canonical_state is unpacked into individual rows', async ({ page }) => {
+        at /app/tests/per-task.spec.js:73:39
+
+    Error Context: test-results/tests-per-task-Per-Task-Mo-48164-pabase-with-correct-user-id/error-context.md
+
+  1 failed
+    tests/per-task.spec.js:38:7 › Per-Task Model Persistence › Creation: Task is saved as a separate row in Supabase with correct user_id

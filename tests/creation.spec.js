@@ -102,4 +102,24 @@ test.describe('Task Creation Regression', () => {
     await expect(taskCard).toBeVisible({ timeout: 10000 });
   });
 
+  test('Optimistic Creation: Task appears immediately during slow hydration', async ({ page }) => {
+    // 1. Intercept hydration fetch to be slow/hanging
+    await page.route('**/rest/v1/tasks?user_id=eq.user-456&local_id=eq.canonical_state&select=*', async route => {
+        // Never resolve
+    });
+
+    await page.goto(BASE_URL);
+
+    // 2. Create task
+    await page.fill('#taskNameInput', 'Optimistic Task');
+    const createBtn = page.locator('#createTaskBtn');
+    await createBtn.click();
+
+    // 3. UI should show the task IMMEDIATELY (Optimistic return)
+    // The button should be re-enabled quickly
+    await expect(createBtn).toBeEnabled();
+
+    const taskCard = page.locator('.task-card-title', { hasText: 'Optimistic Task' });
+    await expect(taskCard).toBeVisible();
+  });
 });
