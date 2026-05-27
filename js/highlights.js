@@ -24,9 +24,11 @@ const Highlights = {
     document.body.appendChild(btn);
     this.floatingBtn = btn;
 
-    btn.onclick = async (e) => {
+    // Use pointerdown for faster response on mobile
+    btn.onpointerdown = (e) => {
       e.stopPropagation();
-      await this.createHighlight();
+      e.preventDefault();
+      this.createHighlight();
     };
   },
 
@@ -92,23 +94,33 @@ const Highlights = {
     if (!container) return;
 
     const handleSelectionEnd = (e) => {
-      // Use a small timeout to ensure selection is complete
+      // Small delay: shorter for mouse (50ms), longer for touch (150ms)
+      const delay = e.type === 'mouseup' ? 50 : 150;
+
       setTimeout(() => {
         const selection = window.getSelection();
-        // If the event target is not within a note body, we check if selection is
-        const noteBody = e.target.closest('.node-body-text') ||
-                         (selection.rangeCount > 0 && selection.getRangeAt(0).startContainer.parentElement.closest('.node-body-text'));
+        if (selection.rangeCount === 0) return;
+
+        const range = selection.getRangeAt(0);
+        let noteBody = e.target.closest('.node-body-text');
+
+        // Mobile fallback: detect if selection is inside a note body
+        if (!noteBody) {
+          let node = range.startContainer;
+          if (node.nodeType === Node.TEXT_NODE) node = node.parentElement;
+          noteBody = node.closest('.node-body-text');
+        }
 
         if (noteBody && selection.toString().trim().length > 0) {
           this.handleSelection(selection, noteBody);
         } else {
-          // Only hide if we're not clicking the button itself
+          // Don't hide if clicking the float button
           if (!e.target.closest('.highlight-float-btn')) {
             this.floatingBtn.style.display = 'none';
             this.activeSelection = null;
           }
         }
-      }, 100); // Slightly longer timeout for mobile stability
+      }, delay);
     };
 
     container.addEventListener('mouseup', handleSelectionEnd);

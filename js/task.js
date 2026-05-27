@@ -18,12 +18,19 @@ let currentTask = null;
 async function init() {
   const urlParams = new URLSearchParams(window.location.search);
   const id = urlParams.get('id');
+
+  // Storage.getTask now waits for cloud data if cache is empty/logged-in
   currentTask = await Storage.getTask(id);
 
   if (!currentTask) {
     window.location.href = 'index.html';
     return;
   }
+
+  finishInit();
+}
+
+function finishInit() {
 
   taskPageTitle.textContent = currentTask.name;
   taskColorBar.style.backgroundColor = currentTask.color;

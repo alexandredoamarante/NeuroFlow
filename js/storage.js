@@ -6,6 +6,8 @@ const Storage = {
   _session: null,
   _lastCheck: 0,
   _debounceTimers: {},
+  _revalidationPromises: {},
+  _lastCloudFetch: 0,
 
   async getSession() {
     const now = Date.now();
@@ -38,46 +40,70 @@ const Storage = {
   async getTasks() {
     const key = await this.getTasksKey();
     const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
+    const session = await this.getSession();
 
-    // Background fetch from Supabase if logged in (SWR pattern)
-    this._revalidateTasks(key);
+    if (session) {
+      const now = Date.now();
+      // If no cache OR it's been more than 5 seconds since last cloud fetch, wait for Supabase
+      if (localTasks.length === 0 || (now - this._lastCloudFetch > 5000)) {
+        return await this._revalidateTasks(key);
+      }
+      // Otherwise, return cache and revalidate in background
+      this._revalidateTasks(key);
+    }
 
     return localTasks;
   },
 
   async _revalidateTasks(key) {
-    try {
-      const session = await this.getSession();
-      if (!session) return;
+    if (this._revalidationPromises[key]) return this._revalidationPromises[key];
 
-      const { data, error } = await this.supabase
-        .from('tasks')
-        .select('*')
-        .order('created_at', { ascending: false });
+    this._revalidationPromises[key] = (async () => {
+      try {
+        const session = await this.getSession();
+        if (!session) return JSON.parse(localStorage.getItem(key) || '[]');
 
-      if (!error && data) {
-        const cloudTasks = data.map(t => ({
-          id: t.local_id,
-          name: t.name,
-          desc: t.description,
-          color: t.color,
-          sessions: t.sessions,
-          checklist: t.checklist,
-          nodes: t.nodes
-        }));
+        const { data, error } = await this.supabase
+          .from('tasks')
+          .select('*')
+          .order('created_at', { ascending: false });
 
-        const localStr = localStorage.getItem(key);
-        const cloudStr = JSON.stringify(cloudTasks);
+        if (!error && data) {
+          this._lastCloudFetch = Date.now();
+          const cloudTasks = data.map(t => ({
+            id: t.local_id,
+            name: t.name,
+            desc: t.description,
+            color: t.color,
+            sessions: t.sessions,
+            checklist: t.checklist,
+            nodes: t.nodes
+          }));
 
-        if (localStr !== cloudStr) {
-          localStorage.setItem(key, cloudStr);
-          // Trigger a custom event so the UI can refresh if needed
-          window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
+          // Safety: Don't overwrite if there are pending local changes (saves in progress)
+          if (Object.keys(this._debounceTimers).length > 0) {
+            console.log('Skipping cloud overwrite due to pending local saves');
+            return cloudTasks;
+          }
+
+          const localStr = localStorage.getItem(key);
+          const cloudStr = JSON.stringify(cloudTasks);
+
+          if (localStr !== cloudStr) {
+            localStorage.setItem(key, cloudStr);
+            window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
+          }
+          return cloudTasks;
         }
+      } catch (e) {
+        console.error('Revalidation error:', e);
+      } finally {
+        delete this._revalidationPromises[key];
       }
-    } catch (e) {
-      console.error('Revalidation error:', e);
-    }
+      return JSON.parse(localStorage.getItem(key) || '[]');
+    })();
+
+    return this._revalidationPromises[key];
   },
 
   async saveTasks(tasks) {
@@ -93,8 +119,25 @@ const Storage = {
   },
 
   async getTask(id) {
-    const tasks = await this.getTasks();
-    return tasks.find(t => t.id === id);
+    const key = await this.getTasksKey();
+    const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
+    const session = await this.getSession();
+
+    let task = localTasks.find(t => t.id === id);
+
+    if (session) {
+      if (task) {
+        // Found in cache, but trigger background revalidation
+        this._revalidateTasks(key);
+        return task;
+      } else {
+        // Not in cache, MUST wait for cloud
+        const cloudTasks = await this._revalidateTasks(key);
+        return cloudTasks.find(t => t.id === id);
+      }
+    }
+
+    return task;
   },
 
   async saveTask(task) {
@@ -116,7 +159,7 @@ const Storage = {
     this._debounceTimers[task.id] = setTimeout(() => {
       this._syncTaskToCloud(task);
       delete this._debounceTimers[task.id];
-    }, 1000); // 1 second debounce
+    }, 500); // 500ms debounce for better responsiveness
   },
 
   async _syncTaskToCloud(task) {
