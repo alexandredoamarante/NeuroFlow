@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS public.tasks (
     user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
     local_id TEXT NOT NULL,
     nodes JSONB NOT NULL DEFAULT '[]'::jsonb,
+    version INTEGER NOT NULL DEFAULT 0,
+    device_id TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     updated_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
     CONSTRAINT tasks_user_id_local_id_key UNIQUE (user_id, local_id)
@@ -15,6 +17,8 @@ CREATE TABLE IF NOT EXISTS public.tasks (
 COMMENT ON TABLE public.tasks IS 'Stores user tasks and notes in a single-document canonical state model.';
 COMMENT ON COLUMN public.tasks.local_id IS 'Identifier for the state type, e.g., "canonical_state".';
 COMMENT ON COLUMN public.tasks.nodes IS 'JSONB array containing the full hierarchy of tasks and notes.';
+COMMENT ON COLUMN public.tasks.version IS 'Incremental version number for conflict resolution.';
+COMMENT ON COLUMN public.tasks.device_id IS 'ID of the device that performed the last update.';
 
 -- Enable Row Level Security
 ALTER TABLE public.tasks ENABLE ROW LEVEL SECURITY;

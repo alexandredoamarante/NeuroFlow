@@ -1,0 +1,28 @@
+{
+  "name": "app",
+  "version": "1.0.0",
+  "description": "Uma ferramenta centralizada de organização e foco que une anotações hierárquicas, gestão de tempo e acompanhamento de tarefas.",
+  "main": "index.js",
+  "directories": {
+    "test": "tests"
+  },
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/alexandredoamarante/NeuroFlow.git"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "bugs": {
+    "url": "https://github.com/alexandredoamarante/NeuroFlow/issues"
+  },
+  "homepage": "https://github.com/alexandredoamarante/NeuroFlow#readme",
+  "dependencies": {
+    "@playwright/test": "^1.60.0",
+    "@supabase/supabase-js": "^2.106.2"
+  }
+}
