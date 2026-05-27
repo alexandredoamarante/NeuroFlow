@@ -17,8 +17,9 @@ colorPicker?.addEventListener('click', (e) => {
   }
 });
 
-function renderTasks() {
-  const tasks = Storage.getTasks();
+async function renderTasks() {
+  taskCount.textContent = "Carregando...";
+  const tasks = await Storage.getTasks();
   taskCount.textContent = `${tasks.length} tarefa${tasks.length !== 1 ? 's' : ''}`;
 
   if (tasks.length === 0) {
@@ -75,10 +76,11 @@ function renderTasks() {
   });
 }
 
-createTaskBtn?.addEventListener('click', () => {
+createTaskBtn?.addEventListener('click', async () => {
   const name = taskNameInput.value.trim();
   if (!name) return;
 
+  createTaskBtn.disabled = true;
   const newTask = {
     id: Date.now().toString(),
     name,
@@ -89,9 +91,10 @@ createTaskBtn?.addEventListener('click', () => {
     nodes: []
   };
 
-  Storage.saveTask(newTask);
+  await Storage.saveTask(newTask);
   taskNameInput.value = '';
   taskDescInput.value = '';
+  createTaskBtn.disabled = false;
   renderTasks();
 });
 

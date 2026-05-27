@@ -15,10 +15,10 @@ const addRootNodeBtn = document.getElementById('addRootNodeBtn');
 
 let currentTask = null;
 
-function init() {
+async function init() {
   const urlParams = new URLSearchParams(window.location.search);
   const id = urlParams.get('id');
-  currentTask = Storage.getTask(id);
+  currentTask = await Storage.getTask(id);
 
   if (!currentTask) {
     window.location.href = 'index.html';
@@ -90,34 +90,34 @@ function renderChecklist() {
   checkProgressText.textContent = `${doneCount} / ${list.length}`;
 }
 
-function syncAndSaveTask() {
-  const latest = Storage.getTask(currentTask.id);
+async function syncAndSaveTask() {
+  const latest = await Storage.getTask(currentTask.id);
   // Merge currentTask checklist/sessions into latest
   latest.checklist = currentTask.checklist;
   latest.sessions = currentTask.sessions;
   // If we had more fields, we'd sync them too.
   // Nodes are handled by tree.js which also pulls from Storage.
-  Storage.saveTask(latest);
+  await Storage.saveTask(latest);
 }
 
-function toggleCheck(index) {
+async function toggleCheck(index) {
   currentTask.checklist[index].done = !currentTask.checklist[index].done;
-  syncAndSaveTask();
+  await syncAndSaveTask();
   renderChecklist();
 }
 
-function deleteCheck(index) {
+async function deleteCheck(index) {
   currentTask.checklist.splice(index, 1);
-  syncAndSaveTask();
+  await syncAndSaveTask();
   renderChecklist();
 }
 
-addCheckBtn?.addEventListener('click', () => {
+addCheckBtn?.addEventListener('click', async () => {
   const text = checkInput.value.trim();
   if (!text) return;
   if (!currentTask.checklist) currentTask.checklist = [];
   currentTask.checklist.push({ text, done: false });
-  syncAndSaveTask();
+  await syncAndSaveTask();
   checkInput.value = '';
   renderChecklist();
 });
@@ -125,8 +125,8 @@ addCheckBtn?.addEventListener('click', () => {
 // Delete Task
 deleteTaskBtn?.addEventListener('click', () => confirmModal.style.display = 'flex');
 confirmCancel?.addEventListener('click', () => confirmModal.style.display = 'none');
-confirmDelete?.addEventListener('click', () => {
-  Storage.deleteTask(currentTask.id);
+confirmDelete?.addEventListener('click', async () => {
+  await Storage.deleteTask(currentTask.id);
   window.location.href = 'index.html';
 });
 
