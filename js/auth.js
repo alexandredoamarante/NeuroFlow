@@ -55,6 +55,7 @@ const Auth = {
     Storage.supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('[AUTH] Auth event:', event);
 
+      const oldSession = Storage._session;
       // Update Storage cache
       Storage._session = session;
       Storage._lastCheck = Date.now();
@@ -63,17 +64,21 @@ const Auth = {
       const isLoggedIn = session && session.user;
       this.updateUI(isLoggedIn ? session : null);
 
-      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
-        if (isLoggedIn) {
-          console.log('[AUTH] User authenticated. Triggering sync flow.');
+      if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && isLoggedIn)) {
+        // Only trigger sync if user actually changed or we didn't have a session before
+        if (!oldSession || oldSession.user.id !== session.user.id) {
+          console.log('[AUTH] User authenticated or changed. Triggering sync flow.');
           await Storage.syncOnLogin();
         }
       }
 
       if (event === 'SIGNED_OUT') {
-        // Reset local app state if needed
         console.log('[AUTH] User signed out');
         await Storage.clearSession();
+      }
+
+      if (event === 'TOKEN_REFRESHED' && isLoggedIn) {
+        console.log('[AUTH] Token refreshed.');
       }
     });
 
