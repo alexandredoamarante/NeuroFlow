@@ -74,9 +74,9 @@ function renderTree(nodes, container, taskId) {
     childrenContainer.className = 'node-children';
     childrenContainer.style.display = node.expanded ? 'block' : 'none';
 
-    header.onclick = () => {
+    header.onclick = async () => {
       node.expanded = !node.expanded;
-      saveCurrentNodes();
+      await saveCurrentNodes();
       renderTree(window.currentNodes, container.closest('#treeContainer') || treeContainer, taskId);
     };
 
@@ -245,13 +245,13 @@ function renderWithHighlights(text, container, highlights, noteId) {
   }
 }
 
-function navigateToNodeByTitle(title) {
+async function navigateToNodeByTitle(title) {
   const target = findNodeByTitle(window.currentNodes, title);
   if (target) {
     // Expand parents and the target itself to show content
     expandParents(window.currentNodes, target.id);
     target.expanded = true;
-    saveCurrentNodes();
+    await saveCurrentNodes();
     renderTree(window.currentNodes, treeContainer);
 
     // Scroll and highlight
@@ -303,12 +303,12 @@ function isAncestor(node, targetId) {
   return false;
 }
 
-function saveCurrentNodes() {
+async function saveCurrentNodes() {
   const id = new URLSearchParams(window.location.search).get('id');
-  const task = Storage.getTask(id);
+  const task = await Storage.getTask(id);
   if (task) {
     task.nodes = window.currentNodes;
-    Storage.saveTask(task);
+    await Storage.saveTask(task);
   }
 }
 
@@ -383,9 +383,9 @@ function findNode(nodes, id) {
   return null;
 }
 
-function deleteNode(id) {
+async function deleteNode(id) {
   window.currentNodes = removeNode(window.currentNodes, id);
-  saveCurrentNodes();
+  await saveCurrentNodes();
   renderTree(window.currentNodes, treeContainer);
 }
 
@@ -404,9 +404,11 @@ modalSave?.addEventListener('click', async () => {
 
   if (!text && !body && !img) return;
 
+  modalSave.disabled = true;
+
   // Sync currentNodes from storage before saving to avoid losing other changes
   const taskId = new URLSearchParams(window.location.search).get('id');
-  const task = Storage.getTask(taskId);
+  const task = await Storage.getTask(taskId);
   if (task) window.currentNodes = task.nodes || [];
 
   if (editingNodeId) {
@@ -440,7 +442,8 @@ modalSave?.addEventListener('click', async () => {
     }
   }
 
-  saveCurrentNodes();
+  await saveCurrentNodes();
+  modalSave.disabled = false;
   nodeModal.style.display = 'none';
   renderTree(window.currentNodes, treeContainer);
 });
@@ -497,15 +500,15 @@ function setAllExpanded(nodes, state) {
   });
 }
 
-expandAllBtn?.addEventListener('click', () => {
+expandAllBtn?.addEventListener('click', async () => {
   setAllExpanded(window.currentNodes, true);
-  saveCurrentNodes();
+  await saveCurrentNodes();
   renderTree(window.currentNodes, treeContainer);
 });
 
-collapseAllBtn?.addEventListener('click', () => {
+collapseAllBtn?.addEventListener('click', async () => {
   setAllExpanded(window.currentNodes, false);
-  saveCurrentNodes();
+  await saveCurrentNodes();
   renderTree(window.currentNodes, treeContainer);
 });
 
