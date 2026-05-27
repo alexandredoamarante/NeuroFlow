@@ -11,6 +11,7 @@ const Storage = {
   _syncQueue: Promise.resolve(),
   _realtimeChannel: null,
   _isSyncing: false,
+  _offlineQueue: [],
 
   // Sync lifecycle state
   _hasCompletedInitialSync: false,
@@ -38,15 +39,15 @@ const Storage = {
    * Safe session retrieval with deduplication.
    */
   async getSession() {
-    console.log('[AUTH] getSession called.');
+    console.log('[AUTH] [TRACE] getSession called.');
     if (this._sessionPromise) {
-      console.log('[AUTH] Returning existing session promise.');
+      console.log('[AUTH] [TRACE] Returning existing session promise.');
       return this._sessionPromise;
     }
 
     const now = Date.now();
     if (this._session && (now - this._lastCheck < 30000)) { // 30s cache
-      console.log('[AUTH] Returning cached session.');
+      console.log('[AUTH] [TRACE] Returning cached session. User:', this._session.user.id);
       return this._session;
     }
 
@@ -99,30 +100,42 @@ const Storage = {
   },
 
   async getTasks() {
+    console.log('[GET_TASKS] [TRACE] getTasks called.');
     const session = await this.getSession();
     const key = await this.getTasksKey();
 
-    console.log('[GET_TASKS] Session:', !!session, 'Key:', key);
+    console.log('[GET_TASKS] [TRACE] Session:', !!session, 'Key:', key, 'Hydrated:', this._hasCompletedInitialSync, 'IsHydrating:', this._isHydrating);
+
+    if (session && !this._offlineListenerAdded) {
+      window.addEventListener('online', () => this._flushOfflineQueue());
+      this._offlineQueue = JSON.parse(localStorage.getItem(`neuroaark_offline_${session.user.id}`) || '[]');
+      this._offlineListenerAdded = true;
+      if (navigator.onLine) this._flushOfflineQueue();
+    }
 
     if (session) {
-      if (!this._hasCompletedInitialSync) {
-        console.log('[HYDRATE] Triggering revalidation before returning tasks.');
+      // BLOCKING HYDRATION: If we are not hydrated OR currently hydrating, we MUST wait.
+      if (!this._hasCompletedInitialSync || this._isHydrating) {
+        console.log('[HYDRATE] [TRACE] getTasks: Waiting for hydration.');
         await this._revalidateTasks(key);
       }
       const state = this._getLocalState(key);
+      console.log('[GET_TASKS] [TRACE] Returning tasks from local state. Count:', state.nodes?.length || 0);
       return state.nodes || [];
     }
 
     const state = this._getLocalState(key);
+    console.log('[GET_TASKS] [TRACE] Returning tasks (anonymous). Count:', state.nodes?.length || 0);
     return state.nodes || [];
   },
 
   async getTask(id) {
+    console.log('[GET_TASK] [TRACE] getTask called for:', id);
     const session = await this.getSession();
     const key = await this.getTasksKey();
 
-    if (session && !this._hasCompletedInitialSync) {
-      console.log('[HYDRATE] Triggering revalidation before returning single task.');
+    if (session && (!this._hasCompletedInitialSync || this._isHydrating)) {
+      console.log('[HYDRATE] [TRACE] getTask: Waiting for hydration.');
       await this._revalidateTasks(key);
     }
 
@@ -135,9 +148,9 @@ const Storage = {
    * Main hydration logic. Ensures local state is reconciled with cloud state.
    */
   async _revalidateTasks(key) {
-    console.log('[HYDRATE] _revalidateTasks starting for:', key);
+    console.log('[HYDRATE] [TRACE] _revalidateTasks starting for:', key);
     if (this._revalidationPromises[key]) {
-      console.log('[HYDRATE] Using existing revalidation promise.');
+      console.log('[HYDRATE] [TRACE] Using existing revalidation promise.');
       return this._revalidationPromises[key];
     }
 
@@ -150,7 +163,7 @@ const Storage = {
           return this._getLocalState(key).nodes;
         }
 
-        console.log('[HYDRATE] Fetching canonical_state for user:', session.user.id);
+        console.log('[HYDRATE] [TRACE] Fetching canonical_state for user:', session.user.id);
         const { data, error } = await this.supabase
           .from('tasks')
           .select('*')
@@ -159,10 +172,10 @@ const Storage = {
           .maybeSingle();
 
         if (error) {
-          console.error('[HYDRATE] Supabase error:', error.message, error.code);
+          console.error('[HYDRATE] [TRACE] Supabase error:', error.message, error.code);
           // If it's not a "not found" error, we might want to retry, but for now we fallback to local.
           if (error.code === 'PGRST116') { // Not found
-             console.log('[HYDRATE] Canonical state missing in cloud.');
+             console.log('[HYDRATE] [TRACE] Canonical state missing in cloud.');
              return await this._handleMissingCloudData(session, key);
           }
           return this._getLocalState(key).nodes;
@@ -170,7 +183,7 @@ const Storage = {
 
         const localState = this._getLocalState(key);
         if (data) {
-          console.log('[HYDRATE] Cloud state found:', { version: data.version, t: data.updated_at, nodes: data.nodes?.length });
+          console.log('[HYDRATE] [TRACE] Cloud state found:', { version: data.version, t: data.updated_at, nodes: data.nodes?.length });
 
           const remoteVersion = data.version || 0;
           const remoteUpdatedAt = data.updated_at ? new Date(data.updated_at).getTime() : 0;
@@ -180,21 +193,21 @@ const Storage = {
           let shouldAdoptRemote = false;
           if (remoteVersion > localVersion) {
             shouldAdoptRemote = true;
-            console.log('[HYDRATE] Choice: Remote is newer (version).');
+            console.log('[HYDRATE] [TRACE] Choice: Remote is newer (version).');
           } else if (remoteVersion === localVersion) {
             if (remoteUpdatedAt >= localUpdatedAt) {
               shouldAdoptRemote = true;
-              console.log('[HYDRATE] Choice: Remote is newer or equal (timestamp).');
+              console.log('[HYDRATE] [TRACE] Choice: Remote is newer or equal (timestamp).');
             } else {
-              console.log('[HYDRATE] Choice: Local is newer (timestamp).');
+              console.log('[HYDRATE] [TRACE] Choice: Local is newer (timestamp).');
             }
           } else {
-            console.log('[HYDRATE] Choice: Local is newer (version).');
+            console.log('[HYDRATE] [TRACE] Choice: Local is newer (version).');
           }
 
           // Absolute safety: if local is empty but cloud has data, adopt cloud.
           if (!shouldAdoptRemote && localState.nodes.length === 0 && (data.nodes && data.nodes.length > 0)) {
-            console.log('[HYDRATE] Choice: Local empty, adopting cloud data.');
+            console.log('[HYDRATE] [TRACE] Choice: Local empty, adopting cloud data.');
             shouldAdoptRemote = true;
           }
 
@@ -241,7 +254,7 @@ const Storage = {
   },
 
   async saveTask(task) {
-    console.log('[SAVE] saveTask called for task:', task.id);
+    console.log('[SAVE] [TRACE] saveTask called for task:', task.id);
     const key = await this.getTasksKey();
     const state = this._getLocalState(key);
     const tasks = state.nodes || [];
@@ -262,7 +275,7 @@ const Storage = {
   },
 
   async deleteTask(id) {
-    console.log('[SAVE] deleteTask called for task:', id);
+    console.log('[SAVE] [TRACE] deleteTask called for task:', id);
     const key = await this.getTasksKey();
     const state = this._getLocalState(key);
     const filtered = (state.nodes || []).filter(t => t.id !== id);
@@ -280,12 +293,18 @@ const Storage = {
   },
 
   _triggerCloudSync(tasks) {
-    console.log('[SAVE] _triggerCloudSync. Tasks:', tasks.length, 'Hydrated:', this._hasCompletedInitialSync);
+    console.log('[SAVE] [TRACE] _triggerCloudSync called. Tasks:', tasks.length, 'Hydrated:', this._hasCompletedInitialSync, 'IsHydrating:', this._isHydrating);
+
+    if (!navigator.onLine) {
+      console.log('[OFFLINE] [TRACE] Device offline. Queueing mutation.');
+      this._queueOfflineMutation(tasks);
+      return Promise.resolve();
+    }
 
     // Safety: if we are not hydrated AND not currently hydrating, we must be careful.
     // However, if we just created a task, we WANT it to sync eventually.
     if (!this._hasCompletedInitialSync && !this._isHydrating) {
-      console.warn('[SAVE] Attempted save before hydration initiated. Force initiating hydration.');
+      console.warn('[SAVE] [TRACE] Attempted save before hydration initiated. Force initiating hydration.');
       this.getTasksKey().then(key => this._revalidateTasks(key));
     }
 
@@ -315,29 +334,61 @@ const Storage = {
   },
 
   async _syncTasksToCloud(tasks) {
-    console.log('[SAVE] _syncTasksToCloud execution start.');
+    console.log('[SAVE] [TRACE] _syncTasksToCloud execution start. Tasks:', tasks.length);
+
+    if (!navigator.onLine) {
+      console.warn('[OFFLINE] [TRACE] Sync aborted: Offline.');
+      this._queueOfflineMutation(tasks);
+      return;
+    }
 
     // Critical guard: Wait for hydration to finish so we don't overwrite newer cloud data with older local data.
     if (this._isHydrating) {
-      console.log('[SAVE] Waiting for hydration to complete before cloud write...');
+      console.log('[SAVE] [TRACE] Waiting for hydration to complete before cloud write...');
       const key = await this.getTasksKey();
       if (this._revalidationPromises[key]) await this._revalidationPromises[key];
     }
 
     if (!this._hasCompletedInitialSync) {
-      console.error('[SAVE] Refusing to sync to cloud: Initial hydration failed or skipped.');
-      return;
+      console.error('[SAVE] [TRACE] Refusing to sync to cloud: Initial hydration failed or skipped.');
+      // Attempt to recover hydration
+      const key = await this.getTasksKey();
+      await this._revalidateTasks(key);
+      if (!this._hasCompletedInitialSync) return;
     }
 
     this._isSyncing = true;
     try {
       const session = await this.getSession();
       if (!session) {
-        console.error('[SAVE] No session found during cloud write.');
+        console.error('[SAVE] [TRACE] No session found during cloud write.');
         return;
       }
 
-      const nextVersion = this._currentVersion + 1;
+      // VERSION GUARD: Fetch latest version from cloud before UPSERT to prevent clobbering.
+      console.log('[SAVE] [TRACE] Fetching latest version for conflict check...');
+      const { data: cloudState, error: fetchError } = await this.supabase
+        .from('tasks')
+        .select('version, updated_at')
+        .eq('user_id', session.user.id)
+        .eq('local_id', 'canonical_state')
+        .maybeSingle();
+
+      if (fetchError) {
+        console.error('[SAVE] [TRACE] Error fetching cloud state for version check:', fetchError.message);
+      }
+
+      const remoteVersion = cloudState?.version || 0;
+      if (remoteVersion > this._currentVersion) {
+        console.warn('[SAVE] [TRACE] Conflict detected! Cloud is ahead. Remote:', remoteVersion, 'Local:', this._currentVersion);
+        console.log('[SAVE] [TRACE] Triggering re-hydration to resolve conflict.');
+        this._isSyncing = false;
+        const key = await this.getTasksKey();
+        await this._revalidateTasks(key);
+        return;
+      }
+
+      const nextVersion = Math.max(this._currentVersion, remoteVersion) + 1;
       const updatedAt = new Date().toISOString();
       const deviceId = this.getDeviceId();
 
@@ -350,16 +401,17 @@ const Storage = {
         updated_at: updatedAt
       };
 
-      console.log('[SAVE] Supabase UPSERT start. Version:', nextVersion);
+      console.log('[SAVE] [TRACE] Supabase UPSERT start. Version:', nextVersion);
       const { data, error } = await this.supabase
         .from('tasks')
         .upsert(payload, { onConflict: 'user_id,local_id' })
         .select();
 
       if (error) {
-        console.error('[SAVE] Supabase UPSERT error:', error.message, error.details);
+        console.error('[SAVE] [TRACE] Supabase UPSERT error:', error.message, error.details);
+        this._queueOfflineMutation(tasks);
       } else {
-        console.log('[SAVE] Supabase UPSERT success. Data returned:', data?.length ? 'Row exists' : 'Empty');
+        console.log('[SAVE] [TRACE] Supabase UPSERT success. New version:', nextVersion);
         this._currentVersion = nextVersion;
         this._lastUpdatedAt = updatedAt;
 
@@ -371,7 +423,7 @@ const Storage = {
         }
       }
     } catch (e) {
-      console.error('[SAVE] Unexpected sync exception:', e);
+      console.error('[SAVE] [TRACE] Unexpected sync exception:', e);
     } finally {
       this._isSyncing = false;
       this._processPendingUpdates();
@@ -379,20 +431,23 @@ const Storage = {
   },
 
   async syncOnLogin() {
-    console.log('[AUTH] syncOnLogin starting.');
+    console.log('[AUTH] [TRACE] syncOnLogin starting.');
     try {
       const session = await this.getSession();
-      if (!session) return;
+      if (!session) {
+        console.warn('[AUTH] [TRACE] syncOnLogin aborted: No session.');
+        return;
+      }
       await this.initRealtime(session.user.id);
       const key = await this.getTasksKey();
       await this._revalidateTasks(key);
     } catch (e) {
-      console.error('[AUTH] syncOnLogin error:', e);
+      console.error('[AUTH] [TRACE] syncOnLogin error:', e);
     }
   },
 
   async _runMigration(session, key) {
-    console.log('[MIGRATE] Checking for legacy tasks...');
+    console.log('[MIGRATE] [TRACE] Checking for legacy tasks...');
     const migrationFlag = `neuroaark_migrated_v4_${session.user.id}`;
 
     // Check for legacy cloud tasks (pre-canonical model)
@@ -438,23 +493,32 @@ const Storage = {
   },
 
   async clearSession() {
-    console.log('[AUTH] clearSession called. Purging sensitive state.');
+    console.log('[AUTH] [TRACE] clearSession called. Purging sensitive state.');
+
+    // IMMEDIATELY set flags to block any further outgoing syncs
+    this._hasCompletedInitialSync = false;
+    this._isSyncing = false;
+    this._isHydrating = false;
+
     if (this._realtimeChannel) {
+      console.log('[AUTH] [TRACE] Removing realtime channel.');
       try { await this.supabase.removeChannel(this._realtimeChannel); } catch(e){}
       this._realtimeChannel = null;
     }
     for (const k in this._debounceTimers) {
-      if (this._debounceTimers[k].timeoutId) clearTimeout(this._debounceTimers[k].timeoutId);
+      if (this._debounceTimers[k].timeoutId) {
+        console.log('[AUTH] [TRACE] Clearing debounce timer for:', k);
+        clearTimeout(this._debounceTimers[k].timeoutId);
+      }
     }
     this._debounceTimers = {};
     this._revalidationPromises = {};
     this._syncQueue = Promise.resolve();
+    this._offlineQueue = [];
 
     this._session = null;
     this._sessionPromise = null;
-    this._isSyncing = false;
-    this._hasCompletedInitialSync = false;
-    this._isHydrating = false;
+    this._offlineListenerAdded = false;
     this._pendingRealtimeUpdates = [];
     this._currentVersion = 0;
 
@@ -466,41 +530,65 @@ const Storage = {
   },
 
   async initRealtime(userId) {
+    console.log('[REALTIME] [TRACE] initRealtime called for user:', userId);
     if (this._realtimeChannel) {
+      console.log('[REALTIME] [TRACE] Removing existing channel.');
       try { await this.supabase.removeChannel(this._realtimeChannel); } catch(e){}
       this._realtimeChannel = null;
     }
-    console.log('[REALTIME] Subscribing for user:', userId);
+    console.log('[REALTIME] [TRACE] Subscribing...');
     this._realtimeChannel = this.supabase
       .channel(`public:tasks:user_id=eq.${userId}`)
       .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
         payload => this._handleRealtimePayload(payload))
-      .subscribe(status => console.log('[REALTIME] Status:', status));
+      .subscribe(status => console.log('[REALTIME] [TRACE] Status:', status));
   },
 
   async _handleRealtimePayload(payload) {
-    console.log('[REALTIME] Event:', payload.eventType, payload.new?.version);
+    console.log('[REALTIME] [TRACE] Event:', payload.eventType, 'Version:', payload.new?.version, 'Device:', payload.new?.device_id);
+
+    // Safety check: only handle updates if we are authenticated and initialized
+    if (!this._hasCompletedInitialSync && !this._isHydrating) {
+        console.log('[REALTIME] [TRACE] Skipping update: Not initialized.');
+        return;
+    }
+
     if (this._isHydrating || this._isSyncing) {
-      console.log('[REALTIME] Busy. Queueing update.');
+      console.log('[REALTIME] [TRACE] Busy (Hydrating:', this._isHydrating, 'Syncing:', this._isSyncing, '). Queueing update.');
       this._pendingRealtimeUpdates.push(payload);
       return;
     }
 
     if (payload.new && payload.new.local_id === 'canonical_state') {
       const remote = payload.new;
-      if (remote.device_id === this.getDeviceId()) return;
+      if (remote.device_id === this.getDeviceId()) {
+        console.log('[REALTIME] [TRACE] Ignoring self-update.');
+        return;
+      }
 
       const key = await this.getTasksKey();
       const local = this._getLocalState(key);
+
       const remoteVersion = remote.version || 0;
       const localVersion = local.version || 0;
+      const remoteUpdatedAt = remote.updated_at ? new Date(remote.updated_at).getTime() : 0;
+      const localUpdatedAt = local.updated_at ? new Date(local.updated_at).getTime() : 0;
 
-      if (remoteVersion > localVersion || (remoteVersion === localVersion && new Date(remote.updated_at) > new Date(local.updated_at))) {
-        console.log('[REALTIME] Adopting newer remote state.');
+      console.log('[REALTIME] [TRACE] Comparing. Remote V:', remoteVersion, 'T:', remoteUpdatedAt, 'Local V:', localVersion, 'T:', localUpdatedAt);
+
+      if (remoteVersion > localVersion || (remoteVersion === localVersion && remoteUpdatedAt > localUpdatedAt)) {
+        console.log('[REALTIME] [TRACE] Adopting newer remote state.');
         this._currentVersion = remoteVersion;
         this._lastUpdatedAt = remote.updated_at;
-        this._setLocalState(key, { nodes: remote.nodes || [], version: remoteVersion, updated_at: remote.updated_at, device_id: remote.device_id });
+        this._setLocalState(key, {
+            nodes: remote.nodes || [],
+            version: remoteVersion,
+            updated_at: remote.updated_at,
+            device_id: remote.device_id
+        });
         window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: remote.nodes }));
+      } else {
+        console.log('[REALTIME] [TRACE] Remote state is older or identical. Ignoring.');
       }
     }
   },
@@ -511,6 +599,26 @@ const Storage = {
       const updates = [...this._pendingRealtimeUpdates];
       this._pendingRealtimeUpdates = [];
       updates.forEach(p => this._handleRealtimePayload(p));
+    }
+  },
+
+  async _queueOfflineMutation(tasks) {
+    const session = await this.getSession();
+    if (!session) return;
+    console.log('[OFFLINE] [TRACE] Persistence queueing mutation. User:', session.user.id);
+    this._offlineQueue = [tasks]; // We only care about the latest canonical state
+    localStorage.setItem(`neuroaark_offline_${session.user.id}`, JSON.stringify(this._offlineQueue));
+  },
+
+  async _flushOfflineQueue() {
+    if (!navigator.onLine || this._offlineQueue.length === 0) return;
+    console.log('[OFFLINE] [TRACE] Connectivity restored. Flushing queue.');
+    const tasks = this._offlineQueue.pop();
+    this._offlineQueue = [];
+    const session = await this.getSession();
+    if (session) {
+      localStorage.removeItem(`neuroaark_offline_${session.user.id}`);
+      await this._triggerCloudSync(tasks);
     }
   }
 };

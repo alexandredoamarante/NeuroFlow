@@ -9,24 +9,29 @@ const Auth = {
   isAuthActionInProgress: false,
 
   async init() {
+    console.log('[AUTH] [TRACE] Auth.init starting.');
     if (!authBtn) return;
 
     // Check if Supabase is available
     if (!Storage || !Storage.supabase) {
-      console.error('Storage or Supabase not initialized');
+      console.error('[AUTH] [TRACE] Storage or Supabase not initialized');
       return;
     }
 
     // 1. Check initial session state
     try {
+      console.log('[AUTH] [TRACE] Checking initial session...');
       const { data: { session } } = await Storage.supabase.auth.getSession();
       if (session) {
+        console.log('[AUTH] [TRACE] Initial session found:', session.user.id);
         Storage._session = session;
         Storage._lastCheck = Date.now();
+      } else {
+        console.log('[AUTH] [TRACE] No initial session.');
       }
       this.updateUI(session);
     } catch (err) {
-      console.error('Error fetching initial session:', err);
+      console.error('[AUTH] [TRACE] Error fetching initial session:', err);
     }
 
     // 2. Register a single robust event listener for both desktop and mobile
@@ -53,7 +58,7 @@ const Auth = {
 
     // 3. Listen for auth changes to sync state across the app
     Storage.supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[AUTH] Auth event received:', event, session ? 'Session found' : 'No session');
+      console.log('[AUTH] [TRACE] Auth event received:', event, session ? `Session User: ${session.user.id}` : 'No session');
 
       const oldUserId = Storage._session?.user?.id;
       // Update Storage cache
@@ -73,13 +78,13 @@ const Auth = {
 
       if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && isLoggedIn) || userChanged) {
         if (isLoggedIn) {
-          console.log('[AUTH] User authenticated, changed, or initial session. Triggering sync flow.');
+          console.log('[AUTH] [TRACE] User authenticated, changed, or initial session. Triggering sync flow.');
           await Storage.syncOnLogin();
         }
       }
 
       if (event === 'SIGNED_OUT') {
-        console.log('[AUTH] User signed out');
+        console.log('[AUTH] [TRACE] User signed out event.');
         await Storage.clearSession();
       }
 
@@ -118,7 +123,7 @@ const Auth = {
    * Signs out the user globally and resets the application state.
    */
   async logout() {
-    console.log('Initiating Logout...');
+    console.log('[AUTH] [TRACE] Initiating Logout...');
     try {
       // Clear session data before signing out to ensure listeners are gone
       await Storage.clearSession();
