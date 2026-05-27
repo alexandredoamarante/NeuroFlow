@@ -51,6 +51,10 @@ const Auth = {
     Storage.supabase.auth.onAuthStateChange(async (event, session) => {
       console.log('Auth event:', event);
 
+      // Update Storage cache
+      Storage._session = session;
+      Storage._lastCheck = Date.now();
+
       // Safety: treat session as logged in only if user exists
       const isLoggedIn = session && session.user;
       this.updateUI(isLoggedIn ? session : null);
@@ -62,6 +66,9 @@ const Auth = {
       if (event === 'SIGNED_OUT') {
         // Reset local app state if needed
         console.log('User signed out');
+        // Clear cache
+        Storage._session = null;
+        Storage._lastCheck = 0;
       }
     });
 

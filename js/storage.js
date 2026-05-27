@@ -3,6 +3,25 @@ const SUPABASE_ANON_KEY = "sb_publishable_6YztmsKgxkLH-8OPtR14Wg_9EOeQTHo";
 
 const Storage = {
   supabase: supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY),
+  _session: null,
+  _lastCheck: 0,
+  _debounceTimers: {},
+
+  async getSession() {
+    const now = Date.now();
+    // Cache session for 1 minute to avoid excessive calls
+    if (this._session && (now - this._lastCheck < 60000)) {
+      return this._session;
+    }
+    try {
+      const { data: { session } } = await this.supabase.auth.getSession();
+      this._session = session;
+      this._lastCheck = now;
+      return session;
+    } catch (e) {
+      return null;
+    }
+  },
 
   async getTasksKey() {
     // Migration: neuroaark_tasks -> neuroaark_tasks_anonymous
@@ -11,8 +30,8 @@ const Storage = {
       localStorage.setItem('neuroaark_tasks_anonymous', legacyData);
     }
 
-    const { data: { session } } = await this.supabase.auth.getSession();
-    if (session) return `neuroaark_tasks_user_${session.user.id}`;
+    const session = await this.getSession();
+    if (session && session.user) return `neuroaark_tasks_user_${session.user.id}`;
     return 'neuroaark_tasks_anonymous';
   },
 
@@ -20,41 +39,51 @@ const Storage = {
     const key = await this.getTasksKey();
     const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
 
-    try {
-      const { data: { session } } = await this.supabase.auth.getSession();
-      if (session) {
-        const { data, error } = await this.supabase
-          .from('tasks')
-          .select('*')
-          .order('created_at', { ascending: false });
+    // Background fetch from Supabase if logged in (SWR pattern)
+    this._revalidateTasks(key);
 
-        if (!error && data) {
-          // Map Supabase data to app format
-          const cloudTasks = data.map(t => ({
-            id: t.local_id,
-            name: t.name,
-            desc: t.description,
-            color: t.color,
-            sessions: t.sessions,
-            checklist: t.checklist,
-            nodes: t.nodes
-          }));
-          // Update local cache
-          localStorage.setItem(key, JSON.stringify(cloudTasks));
-          return cloudTasks;
+    return localTasks;
+  },
+
+  async _revalidateTasks(key) {
+    try {
+      const session = await this.getSession();
+      if (!session) return;
+
+      const { data, error } = await this.supabase
+        .from('tasks')
+        .select('*')
+        .order('created_at', { ascending: false });
+
+      if (!error && data) {
+        const cloudTasks = data.map(t => ({
+          id: t.local_id,
+          name: t.name,
+          desc: t.description,
+          color: t.color,
+          sessions: t.sessions,
+          checklist: t.checklist,
+          nodes: t.nodes
+        }));
+
+        const localStr = localStorage.getItem(key);
+        const cloudStr = JSON.stringify(cloudTasks);
+
+        if (localStr !== cloudStr) {
+          localStorage.setItem(key, cloudStr);
+          // Trigger a custom event so the UI can refresh if needed
+          window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
         }
       }
     } catch (e) {
-      console.error('Supabase getTasks error:', e);
+      console.error('Revalidation error:', e);
     }
-
-    return localTasks;
   },
 
   async saveTasks(tasks) {
     const key = await this.getTasksKey();
     localStorage.setItem(key, JSON.stringify(tasks));
-    const { data: { session } } = await this.supabase.auth.getSession();
+    const session = await this.getSession();
     if (session) {
       // For bulk save, we iterate and save each (ensuring cloud sync)
       for (const task of tasks) {
@@ -80,9 +109,19 @@ const Storage = {
     }
     localStorage.setItem(key, JSON.stringify(tasks));
 
-    // 2. Update Supabase if logged in
+    // 2. Update Supabase if logged in (non-blocking with debounce)
+    if (this._debounceTimers[task.id]) {
+      clearTimeout(this._debounceTimers[task.id]);
+    }
+    this._debounceTimers[task.id] = setTimeout(() => {
+      this._syncTaskToCloud(task);
+      delete this._debounceTimers[task.id];
+    }, 1000); // 1 second debounce
+  },
+
+  async _syncTaskToCloud(task) {
     try {
-      const { data: { session } } = await this.supabase.auth.getSession();
+      const session = await this.getSession();
       if (session) {
         const taskData = {
           user_id: session.user.id,
@@ -103,7 +142,7 @@ const Storage = {
         if (error) console.error('Error saving to Supabase:', error.message);
       }
     } catch (e) {
-      console.error('Supabase saveTask error:', e);
+      console.error('Supabase sync error:', e);
     }
   },
 
@@ -114,9 +153,13 @@ const Storage = {
     const filtered = tasks.filter(t => t.id !== id);
     localStorage.setItem(key, JSON.stringify(filtered));
 
-    // 2. Update Supabase
+    // 2. Update Supabase (non-blocking)
+    this._deleteTaskFromCloud(id);
+  },
+
+  async _deleteTaskFromCloud(id) {
     try {
-      const { data: { session } } = await this.supabase.auth.getSession();
+      const session = await this.getSession();
       if (session) {
         const { error } = await this.supabase
           .from('tasks')
@@ -126,13 +169,13 @@ const Storage = {
         if (error) console.error('Error deleting from Supabase:', error.message);
       }
     } catch (e) {
-      console.error('Supabase deleteTask error:', e);
+      console.error('Supabase delete error:', e);
     }
   },
 
   async syncOnLogin() {
     try {
-      const { data: { session } } = await this.supabase.auth.getSession();
+      const session = await this.getSession();
       if (!session) return;
 
       // Check if we already migrated

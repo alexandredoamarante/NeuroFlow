@@ -95,21 +95,25 @@ const Highlights = {
       // Use a small timeout to ensure selection is complete
       setTimeout(() => {
         const selection = window.getSelection();
-        const noteBody = e.target.closest('.node-body-text');
+        // If the event target is not within a note body, we check if selection is
+        const noteBody = e.target.closest('.node-body-text') ||
+                         (selection.rangeCount > 0 && selection.getRangeAt(0).startContainer.parentElement.closest('.node-body-text'));
 
         if (noteBody && selection.toString().trim().length > 0) {
           this.handleSelection(selection, noteBody);
         } else {
+          // Only hide if we're not clicking the button itself
           if (!e.target.closest('.highlight-float-btn')) {
             this.floatingBtn.style.display = 'none';
             this.activeSelection = null;
           }
         }
-      }, 50);
+      }, 100); // Slightly longer timeout for mobile stability
     };
 
     container.addEventListener('mouseup', handleSelectionEnd);
     container.addEventListener('touchend', handleSelectionEnd);
+
 
     // Handle clicks on highlights - delegated to container
     container.addEventListener('click', async (e) => {
@@ -203,13 +207,20 @@ const Highlights = {
   showFloatingBtn(rect) {
     this.floatingBtn.style.display = 'flex';
 
-    let top = window.scrollY + rect.top - 45;
-    let left = window.scrollX + rect.left + rect.width / 2 - 17;
+    let top = window.scrollY + rect.top - 50;
+    let left = window.scrollX + rect.left + rect.width / 2 - 20;
 
     // Viewport boundaries
-    if (top < window.scrollY + 10) top = window.scrollY + rect.bottom + 10;
-    if (left < 10) left = 10;
-    if (left + 40 > window.innerWidth) left = window.innerWidth - 50;
+    const margin = 15;
+    if (top < window.scrollY + margin) {
+      top = window.scrollY + rect.bottom + margin;
+    }
+
+    if (left < margin) {
+      left = margin;
+    } else if (left + 40 > window.innerWidth - margin) {
+      left = window.innerWidth - 40 - margin;
+    }
 
     this.floatingBtn.style.top = `${top}px`;
     this.floatingBtn.style.left = `${left}px`;
@@ -240,7 +251,7 @@ const Highlights = {
     };
 
     node.highlights.push(newHighlight);
-    await Storage.saveTask(task);
+    Storage.saveTask(task); // Non-blocking
 
     this.floatingBtn.style.display = 'none';
     window.getSelection().removeAllRanges();
@@ -372,7 +383,7 @@ const Highlights = {
     const text = input.value.trim();
 
     this.activeHighlight.highlight.comment = text;
-    await Storage.saveTask(this.activeHighlight.task);
+    Storage.saveTask(this.activeHighlight.task); // Non-blocking
 
     // Switch back to display mode
     document.getElementById('popoverEditArea').style.display = 'none';
@@ -383,7 +394,7 @@ const Highlights = {
 
   async updateColor(color) {
     this.activeHighlight.highlight.color = color;
-    await Storage.saveTask(this.activeHighlight.task);
+    Storage.saveTask(this.activeHighlight.task); // Non-blocking
     this.renderComments();
 
     // Re-render the tree to update the visual highlight color
@@ -399,7 +410,7 @@ const Highlights = {
 
     const { node, highlight, task } = this.activeHighlight;
     node.highlights = node.highlights.filter(h => h.id !== highlight.id);
-    await Storage.saveTask(task);
+    Storage.saveTask(task); // Non-blocking
 
     this.popover.style.display = 'none';
 
