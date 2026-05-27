@@ -8,31 +8,14 @@ const Storage = {
   _lastCheck: 0,
   _debounceTimers: {},
   _revalidationPromises: {},
-  _syncQueue: Promise.resolve(),
   _realtimeChannel: null,
-  _isSyncing: false,
   _offlineQueue: [],
-
-  /**
-   * Helper to append a task to the serial sync queue.
-   * Ensures the queue never remains in a rejected state.
-   */
-  _enqueue(taskFn) {
-    this._syncQueue = this._syncQueue
-      .then(taskFn)
-      .catch(err => {
-        console.error('[QUEUE] [ERROR] Task in sync queue failed:', err);
-        return null; // Ensure the queue remains functional
-      });
-    return this._syncQueue;
-  },
+  _memoryCache: {},
 
   // Sync lifecycle state
   _hasCompletedInitialSync: false,
-  _isHydrating: false,
   _deviceId: null,
   _pendingRealtimeUpdates: [],
-  _currentVersion: 0,
   _lastUpdatedAt: null,
 
   /**
@@ -120,6 +103,17 @@ const Storage = {
 
   _getLocalState(key) {
     console.log('[CACHE] [TRACE] _getLocalState called for:', key);
+
+    // For authenticated users, use memory cache ONLY to ensure cloud authority
+    if (key.startsWith('neuroaark_tasks_user_')) {
+      if (this._memoryCache[key]) {
+        console.log('[CACHE] [TRACE] Returning data from MEMORY for:', key);
+        return this._memoryCache[key];
+      }
+      console.log('[CACHE] [TRACE] No memory data found for:', key);
+      return { nodes: [], version: 0, updated_at: null, device_id: null };
+    }
+
     const raw = localStorage.getItem(key);
     if (!raw) {
       console.log('[CACHE] [TRACE] No local data found for:', key);
@@ -145,6 +139,11 @@ const Storage = {
   },
 
   _setLocalState(key, state) {
+    if (key.startsWith('neuroaark_tasks_user_')) {
+      console.log('[CACHE] [TRACE] Updating MEMORY cache for:', key, 'Version:', state.version, 'Nodes:', state.nodes?.length || 0);
+      this._memoryCache[key] = state;
+      return; // DO NOT persist to localStorage for authenticated users
+    }
     console.log('[CACHE] [TRACE] Updating localStorage key:', key, 'Version:', state.version, 'Nodes:', state.nodes?.length || 0);
     localStorage.setItem(key, JSON.stringify(state));
   },
@@ -360,6 +359,24 @@ const Storage = {
     return Promise.resolve();
   },
 
+  /**
+   * Cleans up any user-specific task data from localStorage.
+   */
+  _cleanupUserLocalStorage() {
+    console.log('[CACHE] [TRACE] Cleaning up authenticated user data from localStorage...');
+    const keysToRemove = [];
+    for (let i = 0; i < localStorage.length; i++) {
+      const key = localStorage.key(i);
+      if (key && (key.startsWith('neuroaark_tasks_user_') || key.startsWith('neuroaark_offline_'))) {
+        keysToRemove.push(key);
+      }
+    }
+    keysToRemove.forEach(k => {
+      console.log('[CACHE] [TRACE] Removing key:', k);
+      localStorage.removeItem(k);
+    });
+  },
+
   async syncOnLogin() {
     console.log('[AUTH] [TRACE] syncOnLogin starting.');
     try {
@@ -368,6 +385,8 @@ const Storage = {
         console.warn('[AUTH] [TRACE] syncOnLogin aborted: No user.');
         return;
       }
+
+      this._cleanupUserLocalStorage();
       await this.initRealtime(user.id);
       const key = await this.getTasksKey();
       await this._revalidateTasks(key);
@@ -455,14 +474,6 @@ const Storage = {
 
     // IMMEDIATELY set flags to block any further outgoing syncs
     this._hasCompletedInitialSync = false;
-    this._isSyncing = false;
-    this._isHydrating = false;
-
-    // REJECT current sync queue to stop pending operations
-    this._syncQueue = Promise.reject(new Error('Logout cleanup initiated')).catch(() => {
-        console.log('[AUTH] [TRACE] Sync queue rejected due to logout.');
-        return Promise.resolve();
-    });
 
     if (this._realtimeChannel) {
       console.log('[AUTH] [TRACE] Removing realtime channel.');
@@ -477,14 +488,13 @@ const Storage = {
     }
     this._debounceTimers = {};
     this._revalidationPromises = {};
-    this._syncQueue = Promise.resolve();
     this._offlineQueue = [];
+    this._memoryCache = {};
 
     this._session = null;
     this._sessionPromise = null;
     this._offlineListenerAdded = false;
     this._pendingRealtimeUpdates = [];
-    this._currentVersion = 0;
 
     // Clear anonymous cache on logout.
     localStorage.removeItem('neuroaark_tasks_anonymous');
@@ -544,14 +554,14 @@ const Storage = {
     if (!session) return;
     console.log('[OFFLINE] [TRACE] Persistence queueing mutation. User:', session.user.id);
     this._offlineQueue = [tasks]; // We only care about the latest canonical state
-    localStorage.setItem(`neuroaark_offline_${session.user.id}`, JSON.stringify(this._offlineQueue));
+
+    // Authenticated users do NOT persist offline mutations to localStorage
+    // In-memory queue is preserved but lost on reload, forcing cloud re-sync
   },
 
   /**
    * Placeholder for future per-task offline handling.
    * For now, we rely on background revalidation upon reconnection.
    */
-  _flushOfflineQueue() {},
-
-  _queueOfflineMutation() {}
+  _flushOfflineQueue() {}
 };
