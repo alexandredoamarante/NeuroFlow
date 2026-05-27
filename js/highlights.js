@@ -24,9 +24,9 @@ const Highlights = {
     document.body.appendChild(btn);
     this.floatingBtn = btn;
 
-    btn.onclick = (e) => {
+    btn.onclick = async (e) => {
       e.stopPropagation();
-      this.createHighlight();
+      await this.createHighlight();
     };
   },
 
@@ -68,21 +68,21 @@ const Highlights = {
       this.popover.style.display = 'none';
     };
 
-    popover.querySelector('#popoverUnmark').onclick = () => this.removeHighlight();
-    popover.querySelector('#popoverSave').onclick = () => this.saveComment();
+    popover.querySelector('#popoverUnmark').onclick = async () => await this.removeHighlight();
+    popover.querySelector('#popoverSave').onclick = async () => await this.saveComment();
     popover.querySelector('#popoverCancel').onclick = () => {
       document.getElementById('popoverEditArea').style.display = 'none';
       document.getElementById('popoverComment').style.display = 'flex';
     };
 
     popover.querySelectorAll('.color-opt').forEach(opt => {
-      opt.onclick = () => this.updateColor(opt.dataset.color);
+      opt.onclick = async () => await this.updateColor(opt.dataset.color);
     });
 
-    popover.querySelector('#popoverInput').onkeypress = (e) => {
+    popover.querySelector('#popoverInput').onkeypress = async (e) => {
       if (e.key === 'Enter' && !e.shiftKey) {
         e.preventDefault();
-        this.saveComment();
+        await this.saveComment();
       }
     };
   },
@@ -112,11 +112,11 @@ const Highlights = {
     container.addEventListener('touchend', handleSelectionEnd);
 
     // Handle clicks on highlights - delegated to container
-    container.addEventListener('click', (e) => {
+    container.addEventListener('click', async (e) => {
       const highlightEl = e.target.closest('.note-highlight');
       if (highlightEl) {
         e.stopPropagation();
-        this.openPopover(highlightEl);
+        await this.openPopover(highlightEl);
       }
     });
 
@@ -220,7 +220,7 @@ const Highlights = {
 
     const { noteId, start, end, text } = this.activeSelection;
     const taskId = new URLSearchParams(window.location.search).get('id');
-    const task = Storage.getTask(taskId);
+    const task = await Storage.getTask(taskId);
 
     if (!task) return;
 
@@ -240,7 +240,7 @@ const Highlights = {
     };
 
     node.highlights.push(newHighlight);
-    Storage.saveTask(task);
+    await Storage.saveTask(task);
 
     this.floatingBtn.style.display = 'none';
     window.getSelection().removeAllRanges();
@@ -265,11 +265,11 @@ const Highlights = {
 
   activeHighlight: null,
 
-  openPopover(el) {
+  async openPopover(el) {
     const highlightId = el.dataset.id;
     const noteId = el.dataset.noteId;
     const taskId = new URLSearchParams(window.location.search).get('id');
-    const task = Storage.getTask(taskId);
+    const task = await Storage.getTask(taskId);
 
     const node = this.findNodeInData(task.nodes, noteId);
     if (!node) return;
@@ -367,12 +367,12 @@ const Highlights = {
     });
   },
 
-  saveComment() {
+  async saveComment() {
     const input = this.popover.querySelector('#popoverInput');
     const text = input.value.trim();
 
     this.activeHighlight.highlight.comment = text;
-    Storage.saveTask(this.activeHighlight.task);
+    await Storage.saveTask(this.activeHighlight.task);
 
     // Switch back to display mode
     document.getElementById('popoverEditArea').style.display = 'none';
@@ -381,9 +381,9 @@ const Highlights = {
     this.renderComments();
   },
 
-  updateColor(color) {
+  async updateColor(color) {
     this.activeHighlight.highlight.color = color;
-    Storage.saveTask(this.activeHighlight.task);
+    await Storage.saveTask(this.activeHighlight.task);
     this.renderComments();
 
     // Re-render the tree to update the visual highlight color
@@ -394,12 +394,12 @@ const Highlights = {
     }
   },
 
-  removeHighlight() {
+  async removeHighlight() {
     if (!confirm('Deseja remover este destaque e sua anotação?')) return;
 
     const { node, highlight, task } = this.activeHighlight;
     node.highlights = node.highlights.filter(h => h.id !== highlight.id);
-    Storage.saveTask(task);
+    await Storage.saveTask(task);
 
     this.popover.style.display = 'none';
 

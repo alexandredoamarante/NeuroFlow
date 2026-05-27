@@ -4,8 +4,15 @@ const SUPABASE_ANON_KEY = "sb_publishable_6YztmsKgxkLH-8OPtR14Wg_9EOeQTHo";
 const Storage = {
   supabase: supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY),
 
+  async getTasksKey() {
+    const { data: { session } } = await this.supabase.auth.getSession();
+    if (session) return `neuroaark_tasks_${session.user.id}`;
+    return 'neuroaark_tasks';
+  },
+
   async getTasks() {
-    const localTasks = JSON.parse(localStorage.getItem('neuroaark_tasks') || '[]');
+    const key = await this.getTasksKey();
+    const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
 
     try {
       const { data: { session } } = await this.supabase.auth.getSession();
@@ -27,7 +34,7 @@ const Storage = {
             nodes: t.nodes
           }));
           // Update local cache
-          localStorage.setItem('neuroaark_tasks', JSON.stringify(cloudTasks));
+          localStorage.setItem(key, JSON.stringify(cloudTasks));
           return cloudTasks;
         }
       }
@@ -39,7 +46,8 @@ const Storage = {
   },
 
   async saveTasks(tasks) {
-    localStorage.setItem('neuroaark_tasks', JSON.stringify(tasks));
+    const key = await this.getTasksKey();
+    localStorage.setItem(key, JSON.stringify(tasks));
     const { data: { session } } = await this.supabase.auth.getSession();
     if (session) {
       // For bulk save, we might want a single call, but current app saves individually mostly
@@ -56,14 +64,15 @@ const Storage = {
 
   async saveTask(task) {
     // 1. Update local cache immediately
-    const tasks = JSON.parse(localStorage.getItem('neuroaark_tasks') || '[]');
+    const key = await this.getTasksKey();
+    const tasks = JSON.parse(localStorage.getItem(key) || '[]');
     const index = tasks.findIndex(t => t.id === task.id);
     if (index > -1) {
       tasks[index] = task;
     } else {
       tasks.push(task);
     }
-    localStorage.setItem('neuroaark_tasks', JSON.stringify(tasks));
+    localStorage.setItem(key, JSON.stringify(tasks));
 
     // 2. Update Supabase if logged in
     try {
@@ -94,9 +103,10 @@ const Storage = {
 
   async deleteTask(id) {
     // 1. Update local cache
-    const tasks = JSON.parse(localStorage.getItem('neuroaark_tasks') || '[]');
+    const key = await this.getTasksKey();
+    const tasks = JSON.parse(localStorage.getItem(key) || '[]');
     const filtered = tasks.filter(t => t.id !== id);
-    localStorage.setItem('neuroaark_tasks', JSON.stringify(filtered));
+    localStorage.setItem(key, JSON.stringify(filtered));
 
     // 2. Update Supabase
     try {
