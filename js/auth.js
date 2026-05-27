@@ -53,9 +53,9 @@ const Auth = {
 
     // 3. Listen for auth changes to sync state across the app
     Storage.supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('[AUTH] Auth event:', event);
+      console.log('[AUTH] Auth event received:', event, session ? 'Session found' : 'No session');
 
-      const oldSession = Storage._session;
+      const oldUserId = Storage._session?.user?.id;
       // Update Storage cache
       Storage._session = session;
       Storage._lastCheck = Date.now();
@@ -64,10 +64,16 @@ const Auth = {
       const isLoggedIn = session && session.user;
       this.updateUI(isLoggedIn ? session : null);
 
-      if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && isLoggedIn)) {
-        // Only trigger sync if user actually changed or we didn't have a session before
-        if (!oldSession || oldSession.user.id !== session.user.id) {
-          console.log('[AUTH] User authenticated or changed. Triggering sync flow.');
+      // We trigger sync if:
+      // 1. It's a SIGNED_IN event (new login or session recovery)
+      // 2. It's INITIAL_SESSION and we have a user
+      // 3. The user ID has changed
+      const newUserId = session?.user?.id;
+      const userChanged = oldUserId !== newUserId;
+
+      if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && isLoggedIn) || userChanged) {
+        if (isLoggedIn) {
+          console.log('[AUTH] User authenticated, changed, or initial session. Triggering sync flow.');
           await Storage.syncOnLogin();
         }
       }
