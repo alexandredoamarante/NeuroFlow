@@ -11,9 +11,30 @@ const Storage = {
   _realtimeChannel: null,
   _isSyncing: false,
 
+  // New sync lifecycle state
+  _hasCompletedInitialSync: false,
+  _isHydrating: false,
+  _deviceId: null,
+  _pendingRealtimeUpdates: [],
+  _currentVersion: 0,
+  _lastUpdatedAt: null,
+
+  /**
+   * Generates or retrieves a unique device ID to track the source of updates.
+   */
+  getDeviceId() {
+    if (this._deviceId) return this._deviceId;
+    let id = localStorage.getItem('neuroaark_device_id');
+    if (!id) {
+      id = 'dev_' + Math.random().toString(36).slice(2, 11) + '_' + Date.now();
+      localStorage.setItem('neuroaark_device_id', id);
+    }
+    this._deviceId = id;
+    return id;
+  },
+
   async getSession() {
     const now = Date.now();
-    // Cache session for 1 minute to avoid excessive calls
     if (this._session && (now - this._lastCheck < 60000)) {
       return this._session;
     }
@@ -28,7 +49,6 @@ const Storage = {
   },
 
   async getTasksKey() {
-    // Migration: neuroaark_tasks -> neuroaark_tasks_anonymous
     const legacyData = localStorage.getItem('neuroaark_tasks');
     if (legacyData && !localStorage.getItem('neuroaark_tasks_anonymous')) {
       localStorage.setItem('neuroaark_tasks_anonymous', legacyData);
@@ -39,27 +59,60 @@ const Storage = {
     return 'neuroaark_tasks_anonymous';
   },
 
+  /**
+   * Helper to get the full state object from localStorage, including metadata.
+   */
+  _getLocalState(key) {
+    const raw = localStorage.getItem(key);
+    if (!raw) return { nodes: [], version: 0, updated_at: null, device_id: null };
+    try {
+      const parsed = JSON.parse(raw);
+      // Handle legacy format (array only) vs new format (object with metadata)
+      if (Array.isArray(parsed)) {
+        return { nodes: parsed, version: 0, updated_at: null, device_id: null };
+      }
+      return parsed;
+    } catch (e) {
+      return { nodes: [], version: 0, updated_at: null, device_id: null };
+    }
+  },
+
+  /**
+   * Helper to set the full state object in localStorage.
+   */
+  _setLocalState(key, state) {
+    localStorage.setItem(key, JSON.stringify(state));
+  },
+
   async getTasks() {
     const key = await this.getTasksKey();
     const session = await this.getSession();
 
     if (session) {
-      // When logged in, Supabase is the primary source.
-      // ALWAYS wait for a fresh fetch to ensure cross-device consistency.
-      return await this._revalidateTasks(key);
+      if (!this._hasCompletedInitialSync && !this._isHydrating) {
+        console.log('[HYDRATE] Triggering initial cloud fetch...');
+        await this._revalidateTasks(key);
+      }
+      const state = this._getLocalState(key);
+      return state.nodes || [];
     }
 
-    // Offline / Anonymous mode
-    return JSON.parse(localStorage.getItem(key) || '[]');
+    const state = this._getLocalState(key);
+    return state.nodes || [];
   },
 
   async _revalidateTasks(key) {
     if (this._revalidationPromises[key]) return this._revalidationPromises[key];
 
     this._revalidationPromises[key] = (async () => {
+      this._isHydrating = true;
+      console.log('[HYDRATE] Starting revalidation...');
       try {
         const session = await this.getSession();
-        if (!session) return JSON.parse(localStorage.getItem(key) || '[]');
+        if (!session) {
+          const state = this._getLocalState(key);
+          return state.nodes || [];
+        }
 
         const { data, error } = await this.supabase
           .from('tasks')
@@ -69,49 +122,94 @@ const Storage = {
           .maybeSingle();
 
         if (error) {
-          console.warn('Supabase fetch error, falling back to local cache:', error.message);
-          return JSON.parse(localStorage.getItem(key) || '[]');
+          console.warn('[SYNC] Supabase fetch error, falling back to local cache:', error.message);
+          const state = this._getLocalState(key);
+          return state.nodes || [];
         }
+
+        const localState = this._getLocalState(key);
 
         if (data) {
-          // In the single-document model, the 'nodes' field contains the full array of tasks
-          const cloudTasks = data.nodes || [];
+          console.log('[SYNC] Remote state found:', { version: data.version, updated_at: data.updated_at, device_id: data.device_id });
 
-          // Safety: Don't overwrite LocalStorage if we have active debounced saves or active syncing.
-          if (Object.keys(this._debounceTimers).length > 0 || this._isSyncing) {
-            console.log('Skipping cloud-to-local overwrite to protect pending local changes');
-            return JSON.parse(localStorage.getItem(key) || '[]');
+          const remoteVersion = data.version || 0;
+          const remoteUpdatedAt = data.updated_at ? new Date(data.updated_at).getTime() : 0;
+          const localUpdatedAt = localState.updated_at ? new Date(localState.updated_at).getTime() : 0;
+
+          // Conflict Protection: Never overwrite newer data with older state
+          if (remoteUpdatedAt < localUpdatedAt && localState.nodes.length > 0) {
+             console.log('[SYNC] Local state is newer than remote. Skipping overwrite.');
+             this._hasCompletedInitialSync = true;
+             return localState.nodes;
           }
 
-          const localStr = localStorage.getItem(key);
-          const cloudStr = JSON.stringify(cloudTasks);
-
-          if (localStr !== cloudStr) {
-            localStorage.setItem(key, cloudStr);
-            window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
+          // Conflict Protection: Remote state must be protected against accidental deletion caused by empty local caches
+          if (localState.nodes.length === 0 && (data.nodes && data.nodes.length > 0)) {
+            console.log('[SYNC] Local state empty but remote has data. Adopting remote state.');
           }
-          return cloudTasks;
+
+          // Adopt remote state if it's newer or we are just starting
+          const newState = {
+            nodes: data.nodes || [],
+            version: remoteVersion,
+            updated_at: data.updated_at,
+            device_id: data.device_id
+          };
+
+          this._currentVersion = remoteVersion;
+          this._lastUpdatedAt = data.updated_at;
+
+          if (JSON.stringify(localState.nodes) !== JSON.stringify(newState.nodes)) {
+            console.log('[SYNC] Applying remote state to local.');
+            this._setLocalState(key, newState);
+            window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: newState.nodes }));
+          }
+
+          this._hasCompletedInitialSync = true;
+          return newState.nodes;
+        } else {
+          console.log('[SYNC] No remote state found.');
+          this._hasCompletedInitialSync = true;
+          return localState.nodes;
         }
-
-        // No data found - return local
-        return JSON.parse(localStorage.getItem(key) || '[]');
       } catch (e) {
-        console.error('Revalidation error:', e);
-        return JSON.parse(localStorage.getItem(key) || '[]');
+        console.error('[SYNC] Revalidation error:', e);
+        const state = this._getLocalState(key);
+        return state.nodes || [];
       } finally {
+        this._isHydrating = false;
         delete this._revalidationPromises[key];
+        this._processPendingUpdates();
       }
     })();
 
     return this._revalidationPromises[key];
   },
 
+  _processPendingUpdates() {
+    if (this._pendingRealtimeUpdates.length > 0) {
+      console.log(`[REALTIME] Processing ${this._pendingRealtimeUpdates.length} pending updates.`);
+      const updates = [...this._pendingRealtimeUpdates];
+      this._pendingRealtimeUpdates = [];
+      updates.forEach(payload => this._handleRealtimePayload(payload));
+    }
+  },
+
   async saveTasks(tasks) {
     const key = await this.getTasksKey();
-    localStorage.setItem(key, JSON.stringify(tasks));
+    const localState = this._getLocalState(key);
+
+    const newState = {
+      ...localState,
+      nodes: tasks,
+      updated_at: new Date().toISOString(),
+      device_id: this.getDeviceId()
+    };
+
+    this._setLocalState(key, newState);
+
     const session = await this.getSession();
     if (session) {
-      // In single-document model, saveTasks updates the full state
       return await this._triggerCloudSync(tasks);
     }
   },
@@ -119,33 +217,36 @@ const Storage = {
   async getTask(id) {
     const key = await this.getTasksKey();
     const session = await this.getSession();
-    const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
 
-    if (session) {
-      // For logged-in users, ALWAYS wait for cloud to ensure we have the latest version (e.g. from another device)
-      const cloudTasks = await this._revalidateTasks(key);
-      const found = cloudTasks.find(t => t.id === id);
-      if (found) return found;
-      // Fallback to local if not found in cloud yet (maybe newly created)
-      return localTasks.find(t => t.id === id);
+    if (session && !this._hasCompletedInitialSync && !this._isHydrating) {
+      await this._revalidateTasks(key);
     }
 
-    return localTasks.find(t => t.id === id);
+    const state = this._getLocalState(key);
+    const tasks = state.nodes || [];
+    return tasks.find(t => t.id === id);
   },
 
   async saveTask(task) {
-    // 1. Update local cache immediately
     const key = await this.getTasksKey();
-    const tasks = JSON.parse(localStorage.getItem(key) || '[]');
+    const state = this._getLocalState(key);
+    const tasks = state.nodes || [];
     const index = tasks.findIndex(t => t.id === task.id);
     if (index > -1) {
       tasks[index] = task;
     } else {
       tasks.push(task);
     }
-    localStorage.setItem(key, JSON.stringify(tasks));
 
-    // 2. Update Supabase if logged in (non-blocking with debounce)
+    const newState = {
+      ...state,
+      nodes: tasks,
+      updated_at: new Date().toISOString(),
+      device_id: this.getDeviceId()
+    };
+
+    this._setLocalState(key, newState);
+
     const session = await this.getSession();
     if (session) {
       return await this._triggerCloudSync(tasks);
@@ -153,6 +254,12 @@ const Storage = {
   },
 
   _triggerCloudSync(tasks) {
+    // Prevent autosave before initial cloud hydration
+    if (!this._hasCompletedInitialSync && !this._isHydrating) {
+      console.warn('[SAVE] Attempted to save before initial sync. Skipping.');
+      return Promise.resolve();
+    }
+
     const syncKey = 'canonical_state';
 
     if (this._debounceTimers[syncKey]) {
@@ -166,13 +273,10 @@ const Storage = {
 
     const currentSync = this._debounceTimers[syncKey];
     currentSync.timeoutId = setTimeout(() => {
-      // Deleting from map BEFORE async sync starts ensures that if a new save
-      // happens during sync, it starts a new debounced batch instead of re-using this resolving one.
       if (this._debounceTimers[syncKey] === currentSync) {
         delete this._debounceTimers[syncKey];
       }
 
-      // Add to Serial Queue to prevent out-of-order writes
       this._syncQueue = this._syncQueue.then(async () => {
         try {
           await this._syncTasksToCloud(currentSync.tasks);
@@ -180,49 +284,80 @@ const Storage = {
           currentSync.resolve();
         }
       });
-    }, 300);
+    }, 1500); // Aggressive 1500ms debounce
 
     return currentSync.promise;
   },
 
   async _syncTasksToCloud(tasks) {
-    // 1. Set syncing flag immediately to block concurrent revalidations/realtime updates from overwriting local state
+    if (this._isHydrating) {
+      console.log('[SAVE] Skipping sync while hydrating.');
+      return;
+    }
+
     this._isSyncing = true;
+    console.log('[SAVE] Syncing to cloud...');
     try {
       const session = await this.getSession();
       if (session) {
+        const nextVersion = this._currentVersion + 1;
+        const updatedAt = new Date().toISOString();
+        const deviceId = this.getDeviceId();
+
         const payload = {
           user_id: session.user.id,
           local_id: 'canonical_state',
-          nodes: tasks, // Using 'nodes' column to store the full state JSON array
-          updated_at: new Date().toISOString()
+          nodes: tasks,
+          version: nextVersion,
+          device_id: deviceId,
+          updated_at: updatedAt
         };
 
-        // 2. Explicitly await the Supabase upsert to ensure _isSyncing remains true until the network request completes
         const { error } = await this.supabase
           .from('tasks')
           .upsert(payload, { onConflict: 'user_id,local_id' });
 
         if (error) {
-          console.error('Error saving to Supabase:', error.message);
+          console.error('[SAVE] Error saving to Supabase:', error.message);
+        } else {
+          console.log('[SAVE] Sync successful. Version:', nextVersion);
+          this._currentVersion = nextVersion;
+          this._lastUpdatedAt = updatedAt;
+
+          // Update local state metadata after successful sync
+          const key = await this.getTasksKey();
+          const localState = this._getLocalState(key);
+          this._setLocalState(key, {
+            ...localState,
+            version: nextVersion,
+            updated_at: updatedAt,
+            device_id: deviceId
+          });
         }
       }
     } catch (e) {
-      console.error('Supabase sync error:', e);
+      console.error('[SAVE] Supabase sync error:', e);
     } finally {
-      // 3. Reset flag only after all async operations are finished
       this._isSyncing = false;
+      this._processPendingUpdates();
     }
   },
 
   async deleteTask(id) {
-    // 1. Update local cache
     const key = await this.getTasksKey();
-    const tasks = JSON.parse(localStorage.getItem(key) || '[]');
+    const state = this._getLocalState(key);
+    const tasks = state.nodes || [];
     const filtered = tasks.filter(t => t.id !== id);
-    localStorage.setItem(key, JSON.stringify(filtered));
 
-    // 2. Update Supabase (non-blocking)
+    const newState = {
+      ...state,
+      nodes: filtered,
+      updated_at: new Date().toISOString(),
+      device_id: this.getDeviceId()
+    };
+
+    this._setLocalState(key, newState);
+
     const session = await this.getSession();
     if (session) {
       return await this._triggerCloudSync(filtered);
@@ -230,116 +365,109 @@ const Storage = {
   },
 
   async syncOnLogin() {
+    console.log('[AUTH] Sync on login triggered.');
     try {
       const session = await this.getSession();
       if (!session) return;
 
-      // Initialize Realtime subscription
       await this.initRealtime(session.user.id);
 
-      // Check if we already migrated to the single-document model
+      const key = await this.getTasksKey();
+
+      // Perform migration if needed
       const migrationFlag = `neuroaark_migrated_v2_${session.user.id}`;
-      if (localStorage.getItem(migrationFlag) === 'true') {
-        // Even if migrated, always revalidate on login to get latest from other devices
-        const key = await this.getTasksKey();
-        await this._revalidateTasks(key);
-        return;
-      }
-
-      console.log('Starting migration to single-document model...');
-
-      // 1. Check for canonical state
-      const { data: canonical, error: fetchError } = await this.supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .eq('local_id', 'canonical_state')
-        .maybeSingle();
-
-      if (fetchError) {
-        console.error('Error fetching canonical state during migration:', fetchError.message);
-        return;
-      }
-
-      // If canonical state already exists, we consider migration done for cloud
-      if (canonical) {
-        const key = await this.getTasksKey();
-        const cloudTasks = canonical.nodes || [];
-        localStorage.setItem(key, JSON.stringify(cloudTasks));
-        localStorage.setItem(migrationFlag, 'true');
-
-        // Refresh view
-        window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
-        return;
-      }
-
-      // 2. Fetch all legacy item-level tasks from cloud
-      const { data: legacyCloudTasks, error: legacyError } = await this.supabase
-        .from('tasks')
-        .select('*')
-        .eq('user_id', session.user.id)
-        .neq('local_id', 'canonical_state');
-
-      let consolidatedTasks = [];
-
-      if (!legacyError && legacyCloudTasks && legacyCloudTasks.length > 0) {
-        console.log('Legacy item-level tasks found in cloud. Migrating...');
-        consolidatedTasks = legacyCloudTasks.map(t => ({
-          id: t.local_id,
-          name: t.name,
-          desc: t.description,
-          color: t.color,
-          sessions: t.sessions,
-          checklist: t.checklist,
-          nodes: t.nodes
-        }));
+      if (localStorage.getItem(migrationFlag) !== 'true') {
+        console.log('[AUTH] Running migration...');
+        await this._runMigration(session, key, migrationFlag);
       } else {
-        // 3. Fallback: migrate anonymous LocalStorage tasks
-        const anonymousTasks = JSON.parse(localStorage.getItem('neuroaark_tasks_anonymous') || '[]');
-        if (anonymousTasks.length > 0) {
-          console.log('No legacy cloud tasks. Migrating anonymous LocalStorage tasks...');
-          consolidatedTasks = anonymousTasks;
-        }
+        await this._revalidateTasks(key);
       }
 
-      if (consolidatedTasks.length > 0) {
-        // Save to canonical document
-        await this._syncTasksToCloud(consolidatedTasks);
-
-        // Cleanup legacy rows (optional but recommended)
-        await this.supabase
-          .from('tasks')
-          .delete()
-          .match({ user_id: session.user.id })
-          .neq('local_id', 'canonical_state');
-      }
-
-      localStorage.setItem(migrationFlag, 'true');
-      console.log('Migration to single-document model complete.');
-
-      // Refresh view
-      window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: consolidatedTasks }));
     } catch (e) {
-      console.error('Supabase syncOnLogin error:', e);
+      console.error('[AUTH] Supabase syncOnLogin error:', e);
     }
   },
 
-  /**
-   * Properly clears the current session, unsubscribes from realtime, and resets state.
-   */
+  async _runMigration(session, key, migrationFlag) {
+    const { data: canonical, error: fetchError } = await this.supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .eq('local_id', 'canonical_state')
+      .maybeSingle();
+
+    if (fetchError) {
+      console.error('[AUTH] Error fetching canonical state during migration:', fetchError.message);
+      return;
+    }
+
+    if (canonical) {
+      const cloudTasks = canonical.nodes || [];
+      this._setLocalState(key, {
+        nodes: cloudTasks,
+        version: canonical.version || 0,
+        updated_at: canonical.updated_at,
+        device_id: canonical.device_id
+      });
+      localStorage.setItem(migrationFlag, 'true');
+      this._hasCompletedInitialSync = true;
+      window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
+      return;
+    }
+
+    // Handle legacy data...
+    const { data: legacyCloudTasks } = await this.supabase
+      .from('tasks')
+      .select('*')
+      .eq('user_id', session.user.id)
+      .neq('local_id', 'canonical_state');
+
+    let consolidatedTasks = [];
+    if (legacyCloudTasks && legacyCloudTasks.length > 0) {
+      consolidatedTasks = legacyCloudTasks.map(t => ({
+        id: t.local_id,
+        name: t.name,
+        desc: t.description,
+        color: t.color,
+        sessions: t.sessions,
+        checklist: t.checklist,
+        nodes: t.nodes
+      }));
+    } else {
+      const anonymousTasks = JSON.parse(localStorage.getItem('neuroaark_tasks_anonymous') || '[]');
+      if (anonymousTasks.length > 0) {
+        consolidatedTasks = anonymousTasks;
+      }
+    }
+
+    if (consolidatedTasks.length > 0) {
+      await this._syncTasksToCloud(consolidatedTasks);
+      await this.supabase
+        .from('tasks')
+        .delete()
+        .match({ user_id: session.user.id })
+        .neq('local_id', 'canonical_state');
+    }
+
+    localStorage.setItem(migrationFlag, 'true');
+    this._hasCompletedInitialSync = true;
+    window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: consolidatedTasks }));
+  },
+
   async clearSession() {
+    console.log('[AUTH] Clearing session...');
     if (this._realtimeChannel) {
-      console.log('Unsubscribing from Realtime channel...');
       await this.supabase.removeChannel(this._realtimeChannel);
       this._realtimeChannel = null;
     }
 
-    // Reset internal state
     this._session = null;
     this._lastCheck = 0;
     this._isSyncing = false;
+    this._hasCompletedInitialSync = false;
+    this._isHydrating = false;
+    this._pendingRealtimeUpdates = [];
 
-    // Clear debounce timers to prevent pending syncs from firing after logout
     for (const key in this._debounceTimers) {
       if (this._debounceTimers[key].timeoutId) {
         clearTimeout(this._debounceTimers[key].timeoutId);
@@ -347,18 +475,27 @@ const Storage = {
     }
     this._debounceTimers = {};
     this._revalidationPromises = {};
+    // Ensure sync queue is reset for next user
+    this._syncQueue = Promise.resolve();
+
+    // Clear temporary caches to prevent mixing user states
+    console.log('[AUTH] Clearing local state cache...');
+    localStorage.removeItem('neuroaark_tasks_anonymous');
+    const keys = Object.keys(localStorage);
+    keys.forEach(key => {
+      if (key.startsWith('neuroaark_tasks_user_')) {
+        localStorage.removeItem(key);
+      }
+    });
   },
 
-  /**
-   * Initializes Supabase Realtime for instant cross-device sync.
-   */
   async initRealtime(userId) {
     if (this._realtimeChannel) {
       await this.supabase.removeChannel(this._realtimeChannel);
       this._realtimeChannel = null;
     }
 
-    console.log('Initializing Supabase Realtime for user:', userId);
+    console.log('[REALTIME] Initializing for user:', userId);
     this._realtimeChannel = this.supabase
       .channel(`public:tasks:user_id=eq.${userId}`)
       .on(
@@ -370,23 +507,52 @@ const Storage = {
           filter: `user_id=eq.${userId}`
         },
         async (payload) => {
-          console.log('Realtime update received:', payload);
-          if (payload.new && payload.new.local_id === 'canonical_state') {
-            const cloudTasks = payload.new.nodes || [];
-            const key = await this.getTasksKey();
-
-            // Safety: Only update local if no pending saves AND not currently syncing
-            if (Object.keys(this._debounceTimers).length === 0 && !this._isSyncing) {
-              const localStr = localStorage.getItem(key);
-              const cloudStr = JSON.stringify(cloudTasks);
-              if (localStr !== cloudStr) {
-                localStorage.setItem(key, cloudStr);
-                window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
-              }
-            }
-          }
+          this._handleRealtimePayload(payload);
         }
       )
       .subscribe();
+  },
+
+  async _handleRealtimePayload(payload) {
+    console.log('[REALTIME] Update received:', payload.eventType);
+
+    if (this._isHydrating || this._isSyncing) {
+      console.log('[REALTIME] Hydration or Sync in progress. Queueing update.');
+      this._pendingRealtimeUpdates.push(payload);
+      return;
+    }
+
+    if (payload.new && payload.new.local_id === 'canonical_state') {
+      const remote = payload.new;
+      const key = await this.getTasksKey();
+      const local = this._getLocalState(key);
+
+      // Never apply our own updates back via realtime to avoid feedback loops
+      if (remote.device_id === this.getDeviceId()) {
+        console.log('[REALTIME] Ignoring update from current device.');
+        return;
+      }
+
+      const remoteUpdatedAt = new Date(remote.updated_at).getTime();
+      const localUpdatedAt = local.updated_at ? new Date(local.updated_at).getTime() : 0;
+
+      if (remoteUpdatedAt > localUpdatedAt) {
+        console.log('[REALTIME] Remote state is newer. Applying.');
+        const newState = {
+          nodes: remote.nodes || [],
+          version: remote.version || 0,
+          updated_at: remote.updated_at,
+          device_id: remote.device_id
+        };
+
+        this._currentVersion = newState.version;
+        this._lastUpdatedAt = newState.updated_at;
+
+        this._setLocalState(key, newState);
+        window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: newState.nodes }));
+      } else {
+        console.log('[REALTIME] Remote state is older or equal. Ignoring.');
+      }
+    }
   }
 };

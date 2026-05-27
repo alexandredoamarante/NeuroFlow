@@ -49,7 +49,7 @@ const Auth = {
 
     // 3. Listen for auth changes to sync state across the app
     Storage.supabase.auth.onAuthStateChange(async (event, session) => {
-      console.log('Auth event:', event);
+      console.log('[AUTH] Auth event:', event);
 
       // Update Storage cache
       Storage._session = session;
@@ -59,18 +59,16 @@ const Auth = {
       const isLoggedIn = session && session.user;
       this.updateUI(isLoggedIn ? session : null);
 
-      if (isLoggedIn) {
-        // Initialize Realtime if logged in (covers SIGNED_IN and INITIAL_SESSION)
-        await Storage.initRealtime(session.user.id);
-      }
-
-      if (event === 'SIGNED_IN' && isLoggedIn) {
-        await Storage.syncOnLogin();
+      if (event === 'SIGNED_IN' || event === 'INITIAL_SESSION') {
+        if (isLoggedIn) {
+          console.log('[AUTH] User authenticated. Triggering sync flow.');
+          await Storage.syncOnLogin();
+        }
       }
 
       if (event === 'SIGNED_OUT') {
         // Reset local app state if needed
-        console.log('User signed out');
+        console.log('[AUTH] User signed out');
         await Storage.clearSession();
       }
     });
