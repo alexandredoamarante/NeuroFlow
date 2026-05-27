@@ -142,13 +142,21 @@ const Storage = {
 
     if (session) {
       // BLOCKING HYDRATION: If we are not hydrated OR currently hydrating, we MUST wait.
+      // For authenticated users, we never return stale local data before cloud revalidation.
       if (!this._hasCompletedInitialSync || this._revalidationPromises[key]) {
         console.log('[HYDRATE] [TRACE] getTasks: Waiting for hydration.');
         await this._revalidateTasks(key);
       }
       const state = this._getLocalState(key);
-      console.log('[GET_TASKS] [TRACE] Returning tasks from local state. Count:', state.nodes?.length || 0);
-      return state.nodes || [];
+
+      // Ensure we have a valid state after revalidation
+      if (this._hasCompletedInitialSync) {
+        console.log('[GET_TASKS] [TRACE] Returning tasks from local state. Count:', state.nodes?.length || 0);
+        return state.nodes || [];
+      } else {
+        console.warn('[GET_TASKS] [TRACE] Hydration failed or was interrupted. Returning empty nodes to prevent data corruption.');
+        return [];
+      }
     }
 
     const state = this._getLocalState(key);
@@ -620,12 +628,16 @@ const Storage = {
     this._pendingRealtimeUpdates = [];
     this._currentVersion = 0;
 
-    // Clear user-specific caches
+    // Clear all local caches on logout to ensure no data leaks or split-brain state.
+    // This ensures that authenticated persistence relies strictly on cloud data for new sessions.
     localStorage.removeItem('neuroaark_tasks_anonymous');
-    // CRITICAL: DO NOT clear user keys anymore. This allows offline/recovery mode if re-login fails or returns empty.
-    // const keys = Object.keys(localStorage);
-    // keys.forEach(k => { if (k.startsWith('neuroaark_tasks_user_')) localStorage.removeItem(k); });
-    console.log('[AUTH] [TRACE] Logout complete. Cache preserved for resilience.');
+    const keys = Object.keys(localStorage);
+    keys.forEach(k => {
+      if (k.startsWith('neuroaark_tasks_user_') || k.startsWith('neuroaark_offline_')) {
+        localStorage.removeItem(k);
+      }
+    });
+    console.log('[AUTH] [TRACE] Logout complete. Local state cleared.');
   },
 
   async initRealtime(userId) {
