@@ -7,8 +7,6 @@ const Storage = {
   _lastCheck: 0,
   _debounceTimers: {},
   _revalidationPromises: {},
-  _lastCloudFetch: 0,
-  _lastWrite: 0,
 
   async getSession() {
     const now = Date.now();
@@ -63,24 +61,15 @@ const Storage = {
         const { data, error } = await this.supabase
           .from('tasks')
           .select('*')
-          .order('created_at', { ascending: false });
+          .eq('local_id', 'canonical_state')
+          .single();
 
         if (!error && data) {
-          this._lastCloudFetch = Date.now();
-          const cloudTasks = data.map(t => ({
-            id: t.local_id,
-            name: t.name,
-            desc: t.description,
-            color: t.color,
-            sessions: t.sessions,
-            checklist: t.checklist,
-            nodes: t.nodes
-          }));
+          // In the single-document model, the 'nodes' field contains the full array of tasks
+          const cloudTasks = data.nodes || [];
 
-          const now = Date.now();
-          // Safety: Don't overwrite LocalStorage if a local write occurred very recently (within 3s)
-          // or if we have active debounced saves.
-          if (Object.keys(this._debounceTimers).length > 0 || (now - this._lastWrite < 3000)) {
+          // Safety: Don't overwrite LocalStorage if we have active debounced saves.
+          if (Object.keys(this._debounceTimers).length > 0) {
             console.log('Skipping cloud-to-local overwrite to protect pending local changes');
             return cloudTasks;
           }
@@ -93,6 +82,9 @@ const Storage = {
             window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
           }
           return cloudTasks;
+        } else if (error && error.code === 'PGRST116') {
+          // Row not found - first time user or legacy user needing migration
+          return JSON.parse(localStorage.getItem(key) || '[]');
         }
       } catch (e) {
         console.error('Revalidation error:', e);
@@ -110,10 +102,8 @@ const Storage = {
     localStorage.setItem(key, JSON.stringify(tasks));
     const session = await this.getSession();
     if (session) {
-      // For bulk save, we iterate and save each (ensuring cloud sync)
-      for (const task of tasks) {
-        await this.saveTask(task);
-      }
+      // In single-document model, saveTasks updates the full state
+      this._triggerCloudSync(tasks);
     }
   },
 
@@ -123,15 +113,7 @@ const Storage = {
     const localTasks = JSON.parse(localStorage.getItem(key) || '[]');
 
     if (session) {
-      const now = Date.now();
-      const task = localTasks.find(t => t.id === id);
-
-      // If found in local cache and the cache is very fresh (< 10s), return immediately
-      if (task && (now - this._lastCloudFetch < 10000)) {
-        return task;
-      }
-
-      // Otherwise, wait for cloud to ensure we have the latest version (e.g. from another device)
+      // For logged-in users, ALWAYS wait for cloud to ensure we have the latest version (e.g. from another device)
       const cloudTasks = await this._revalidateTasks(key);
       return cloudTasks.find(t => t.id === id);
     }
@@ -140,7 +122,6 @@ const Storage = {
   },
 
   async saveTask(task) {
-    this._lastWrite = Date.now();
     // 1. Update local cache immediately
     const key = await this.getTasksKey();
     const tasks = JSON.parse(localStorage.getItem(key) || '[]');
@@ -153,34 +134,37 @@ const Storage = {
     localStorage.setItem(key, JSON.stringify(tasks));
 
     // 2. Update Supabase if logged in (non-blocking with debounce)
-    if (this._debounceTimers[task.id]) {
-      clearTimeout(this._debounceTimers[task.id]);
+    const session = await this.getSession();
+    if (session) {
+      this._triggerCloudSync(tasks);
     }
-    this._debounceTimers[task.id] = setTimeout(() => {
-      this._syncTaskToCloud(task);
-      delete this._debounceTimers[task.id];
-    }, 300); // Faster debounce for cross-device sync
   },
 
-  async _syncTaskToCloud(task) {
+  _triggerCloudSync(tasks) {
+    const syncKey = 'canonical_state';
+    if (this._debounceTimers[syncKey]) {
+      clearTimeout(this._debounceTimers[syncKey]);
+    }
+    this._debounceTimers[syncKey] = setTimeout(() => {
+      this._syncTasksToCloud(tasks);
+      delete this._debounceTimers[syncKey];
+    }, 300);
+  },
+
+  async _syncTasksToCloud(tasks) {
     try {
       const session = await this.getSession();
       if (session) {
-        const taskData = {
+        const payload = {
           user_id: session.user.id,
-          local_id: task.id,
-          name: task.name,
-          description: task.desc,
-          color: task.color,
-          sessions: task.sessions,
-          checklist: task.checklist,
-          nodes: task.nodes,
+          local_id: 'canonical_state',
+          nodes: tasks, // Using 'nodes' column to store the full state JSON array
           updated_at: new Date().toISOString()
         };
 
         const { error } = await this.supabase
           .from('tasks')
-          .upsert(taskData, { onConflict: 'user_id,local_id' });
+          .upsert(payload, { onConflict: 'user_id,local_id' });
 
         if (error) console.error('Error saving to Supabase:', error.message);
       }
@@ -190,7 +174,6 @@ const Storage = {
   },
 
   async deleteTask(id) {
-    this._lastWrite = Date.now();
     // 1. Update local cache
     const key = await this.getTasksKey();
     const tasks = JSON.parse(localStorage.getItem(key) || '[]');
@@ -198,22 +181,9 @@ const Storage = {
     localStorage.setItem(key, JSON.stringify(filtered));
 
     // 2. Update Supabase (non-blocking)
-    this._deleteTaskFromCloud(id);
-  },
-
-  async _deleteTaskFromCloud(id) {
-    try {
-      const session = await this.getSession();
-      if (session) {
-        const { error } = await this.supabase
-          .from('tasks')
-          .delete()
-          .match({ user_id: session.user.id, local_id: id });
-
-        if (error) console.error('Error deleting from Supabase:', error.message);
-      }
-    } catch (e) {
-      console.error('Supabase delete error:', e);
+    const session = await this.getSession();
+    if (session) {
+      this._triggerCloudSync(filtered);
     }
   },
 
@@ -222,33 +192,75 @@ const Storage = {
       const session = await this.getSession();
       if (!session) return;
 
-      // Check if we already migrated
-      const migrationFlag = `neuroaark_migrated_${session.user.id}`;
+      // Check if we already migrated to the single-document model
+      const migrationFlag = `neuroaark_migrated_v2_${session.user.id}`;
       if (localStorage.getItem(migrationFlag) === 'true') return;
 
-      // Sync FROM anonymous storage TO user storage
-      const anonymousTasks = JSON.parse(localStorage.getItem('neuroaark_tasks_anonymous') || '[]');
-      if (anonymousTasks.length === 0) return;
+      console.log('Starting migration to single-document model...');
 
-      // Check if user has any tasks in Supabase
-      const { data: cloudData, error } = await this.supabase
+      // 1. Check for canonical state
+      const { data: canonical, error: fetchError } = await this.supabase
         .from('tasks')
-        .select('id')
-        .limit(1);
+        .select('*')
+        .eq('local_id', 'canonical_state')
+        .maybeSingle();
 
-      if (error) {
-        console.error('Error checking cloud data during sync:', error.message);
+      if (fetchError) {
+        console.error('Error fetching canonical state during migration:', fetchError.message);
         return;
       }
 
-      // If cloud is empty for this user, migrate anonymous tasks
-      if (cloudData && cloudData.length === 0) {
-        console.log('Migrating anonymous tasks to Supabase user account...');
-        for (const task of anonymousTasks) {
-          await this.saveTask(task);
-        }
+      // If canonical state already exists, we consider migration done for cloud
+      if (canonical) {
         localStorage.setItem(migrationFlag, 'true');
+        return;
       }
+
+      // 2. Fetch all legacy item-level tasks from cloud
+      const { data: legacyCloudTasks, error: legacyError } = await this.supabase
+        .from('tasks')
+        .select('*')
+        .neq('local_id', 'canonical_state');
+
+      let consolidatedTasks = [];
+
+      if (!legacyError && legacyCloudTasks && legacyCloudTasks.length > 0) {
+        console.log('Legacy item-level tasks found in cloud. Migrating...');
+        consolidatedTasks = legacyCloudTasks.map(t => ({
+          id: t.local_id,
+          name: t.name,
+          desc: t.description,
+          color: t.color,
+          sessions: t.sessions,
+          checklist: t.checklist,
+          nodes: t.nodes
+        }));
+      } else {
+        // 3. Fallback: migrate anonymous LocalStorage tasks
+        const anonymousTasks = JSON.parse(localStorage.getItem('neuroaark_tasks_anonymous') || '[]');
+        if (anonymousTasks.length > 0) {
+          console.log('No legacy cloud tasks. Migrating anonymous LocalStorage tasks...');
+          consolidatedTasks = anonymousTasks;
+        }
+      }
+
+      if (consolidatedTasks.length > 0) {
+        // Save to canonical document
+        await this._syncTasksToCloud(consolidatedTasks);
+
+        // Cleanup legacy rows (optional but recommended)
+        await this.supabase
+          .from('tasks')
+          .delete()
+          .match({ user_id: session.user.id })
+          .neq('local_id', 'canonical_state');
+      }
+
+      localStorage.setItem(migrationFlag, 'true');
+      console.log('Migration to single-document model complete.');
+
+      // Refresh view
+      window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: consolidatedTasks }));
     } catch (e) {
       console.error('Supabase syncOnLogin error:', e);
     }
