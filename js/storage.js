@@ -1,9 +1,9 @@
 const Storage = {
   getTasks() {
-    return JSON.parse(localStorage.getItem('neuroflow_tasks') || '[]');
+    return JSON.parse(localStorage.getItem('neuroaark_tasks') || '[]');
   },
   saveTasks(tasks) {
-    localStorage.setItem('neuroflow_tasks', JSON.stringify(tasks));
+    localStorage.setItem('neuroaark_tasks', JSON.stringify(tasks));
   },
   getTask(id) {
     return this.getTasks().find(t => t.id === id);
