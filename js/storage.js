@@ -89,8 +89,8 @@ const Storage = {
     const session = await this.getSession();
 
     if (session) {
-      if (!this._hasCompletedInitialSync && !this._isHydrating) {
-        console.log('[HYDRATE] Triggering initial cloud fetch...');
+      if (!this._hasCompletedInitialSync) {
+        console.log('[HYDRATE] Waiting for initial cloud sync completion...');
         await this._revalidateTasks(key);
       }
       const state = this._getLocalState(key);
@@ -159,16 +159,21 @@ const Storage = {
           this._currentVersion = remoteVersion;
           this._lastUpdatedAt = data.updated_at;
 
+          this._hasCompletedInitialSync = true;
           if (JSON.stringify(localState.nodes) !== JSON.stringify(newState.nodes)) {
             console.log('[SYNC] Applying remote state to local.');
             this._setLocalState(key, newState);
             window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: newState.nodes }));
           }
-
-          this._hasCompletedInitialSync = true;
           return newState.nodes;
         } else {
           console.log('[SYNC] No remote state found.');
+          // Before giving up, check if we need to migrate legacy data
+          const migrationFlag = `neuroaark_migrated_v2_${session.user.id}`;
+          if (localStorage.getItem(migrationFlag) !== 'true') {
+            console.log('[SYNC] Canonical state missing, triggering migration...');
+            return await this._runMigration(session, key, migrationFlag);
+          }
           this._hasCompletedInitialSync = true;
           return localState.nodes;
         }
@@ -218,7 +223,8 @@ const Storage = {
     const key = await this.getTasksKey();
     const session = await this.getSession();
 
-    if (session && !this._hasCompletedInitialSync && !this._isHydrating) {
+    if (session && !this._hasCompletedInitialSync) {
+      console.log('[HYDRATE] getTask waiting for initial cloud sync...');
       await this._revalidateTasks(key);
     }
 
@@ -373,15 +379,8 @@ const Storage = {
       await this.initRealtime(session.user.id);
 
       const key = await this.getTasksKey();
-
-      // Perform migration if needed
-      const migrationFlag = `neuroaark_migrated_v2_${session.user.id}`;
-      if (localStorage.getItem(migrationFlag) !== 'true') {
-        console.log('[AUTH] Running migration...');
-        await this._runMigration(session, key, migrationFlag);
-      } else {
-        await this._revalidateTasks(key);
-      }
+      console.log('[AUTH] Triggering initial hydration/migration...');
+      await this._revalidateTasks(key);
 
     } catch (e) {
       console.error('[AUTH] Supabase syncOnLogin error:', e);
@@ -402,7 +401,9 @@ const Storage = {
     }
 
     if (canonical) {
+      console.log('[AUTH] Canonical state found during migration path.');
       const cloudTasks = canonical.nodes || [];
+      this._hasCompletedInitialSync = true;
       this._setLocalState(key, {
         nodes: cloudTasks,
         version: canonical.version || 0,
@@ -410,9 +411,8 @@ const Storage = {
         device_id: canonical.device_id
       });
       localStorage.setItem(migrationFlag, 'true');
-      this._hasCompletedInitialSync = true;
       window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: cloudTasks }));
-      return;
+      return cloudTasks;
     }
 
     // Handle legacy data...
@@ -452,6 +452,7 @@ const Storage = {
     localStorage.setItem(migrationFlag, 'true');
     this._hasCompletedInitialSync = true;
     window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: consolidatedTasks }));
+    return consolidatedTasks;
   },
 
   async clearSession() {
@@ -483,7 +484,7 @@ const Storage = {
     localStorage.removeItem('neuroaark_tasks_anonymous');
     const keys = Object.keys(localStorage);
     keys.forEach(key => {
-      if (key.startsWith('neuroaark_tasks_user_')) {
+      if (key.startsWith('neuroaark_tasks_user_') || key.startsWith('neuroaark_migrated_v2_')) {
         localStorage.removeItem(key);
       }
     });

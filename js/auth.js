@@ -20,6 +20,10 @@ const Auth = {
     // 1. Check initial session state
     try {
       const { data: { session } } = await Storage.supabase.auth.getSession();
+      if (session) {
+        Storage._session = session;
+        Storage._lastCheck = Date.now();
+      }
       this.updateUI(session);
     } catch (err) {
       console.error('Error fetching initial session:', err);
