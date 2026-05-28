@@ -74,11 +74,15 @@ const Auth = {
       }
 
       if (proceed) {
-        Storage.setSyncEnabled(true);
+        console.log('[WORKSPACE_SWITCH] [START] Joining workspace:', newKey);
+        // 1. Switch workspace FIRST (but keep sync disabled temporarily during switch)
         await Storage.setWorkspaceId(newKey, { replaceLocalState: true });
+        // 2. Enable sync for the NEW workspace
+        await Storage.setSyncEnabled(true);
+
         this.updateUI();
         if (workspaceModal) workspaceModal.style.display = 'none';
-        // Reloading ensures all other modules (home.js, task.js) pick up the new workspace state
+        console.log('[WORKSPACE_SWITCH] [SUCCESS] Workspace joined. Reloading...');
         window.location.reload();
       }
       joinWorkspaceBtn.disabled = false;
