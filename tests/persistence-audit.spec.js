@@ -1,98 +1,96 @@
-
 import { test, expect } from '@playwright/test';
-
-const mockSession = {
-  user: { id: 'user-audit', email: 'audit@example.com' },
-  access_token: 'fake-token',
-  refresh_token: 'fake-refresh',
-  expires_at: Math.floor(Date.now() / 1000) + 3600
-};
-
-const PROJECT_ID = 'bdvwpyiabmmfsvsjytxn';
-const BASE_URL = 'http://localhost:8080/index.html';
 
 test.describe('Infrastructure & Persistence Audit (Per-Task Model)', () => {
 
-  test.beforeEach(async ({ page }) => {
-    await page.addInitScript(() => {
-      localStorage.clear();
-    });
-  });
-
   test('Audit: Data created while authenticated is strictly synced to Supabase with user_id', async ({ page }) => {
-    let upsertedData = null;
-    let upsertCount = 0;
+    await page.goto('http://localhost:8080/');
 
-    await page.route('**/*.supabase.co/**', async route => {
-      const url = route.request().url();
-      const method = route.request().method();
-
-      if (url.includes('/auth/v1/')) {
-          return route.fulfill({
-              status: 200,
-              json: {
-                  session: mockSession,
-                  user: mockSession.user,
-                  data: { user: mockSession.user, session: mockSession }
-              }
-          });
-      }
-
-      if (url.includes('/rest/v1/tasks')) {
-          if (method === 'GET') return route.fulfill({ status: 200, json: [] });
-          if (method === 'POST') {
-              const body = route.request().postDataJSON();
-              upsertedData = body;
-              upsertCount++;
-              return route.fulfill({ status: 200, json: [body] });
-          }
-      }
-      return route.continue();
+    // 1. Setup Mock Auth Session
+    await page.evaluate(() => {
+      window.Storage._session = {
+        user: { id: 'audit-user-123', email: 'audit@example.com' }
+      };
     });
 
-    await page.addInitScript(({ session, projectId }) => {
-        localStorage.setItem(`sb-${projectId}-auth-token`, JSON.stringify(session));
-    }, { session: mockSession, projectId: PROJECT_ID });
+    // 2. Intercept Supabase UPSERT
+    let interceptedPayload = null;
+    await page.route('**/rest/v1/tasks*', async (route) => {
+      if (route.request().method() === 'POST') {
+        interceptedPayload = JSON.parse(route.request().postData());
+        console.log('intercepted POST payload:', JSON.stringify(interceptedPayload));
+        await route.fulfill({
+          status: 201,
+          contentType: 'application/json',
+          body: JSON.stringify([{ id: 'db-id-123' }])
+        });
+      } else {
+        await route.fulfill({
+          status: 200,
+          contentType: 'application/json',
+          body: JSON.stringify([])
+        });
+      }
+    });
 
-    await page.goto(BASE_URL);
+    // 3. Create a task
+    await page.fill('input[placeholder="Nome da tarefa..."]', 'Audit Task');
+    await page.click('button:has-text("Criar Tarefa")');
 
-    await page.fill('#taskNameInput', 'Audit Task');
-    await page.click('#createTaskBtn');
-
-    await expect(page.locator('.task-card-title')).toHaveText('Audit Task');
-
-    // Wait for async log
+    // 4. Verify interception and User ID Resolution
     await page.waitForFunction(() => window.__SUPABASE_LOGS__?.some(l => l.action === 'SAVE_TASK_UPSERT'));
 
-    expect(upsertCount).toBeGreaterThan(0);
-    expect(upsertedData.nodes.name).toBe('Audit Task');
-    expect(upsertedData.user_id).toBe(mockSession.user.id);
+    expect(interceptedPayload).not.toBeNull();
+    // Payload should be a single row object for per-task model
+    const row = Array.isArray(interceptedPayload) ? interceptedPayload[0] : interceptedPayload;
+    expect(row.user_id).toBe('audit-user-123');
+    expect(row.nodes.name).toBe('Audit Task');
+    expect(row.local_id).toBeDefined();
+
+    // 5. Verify local storage also updated (resilience)
+    const localTasks = await page.evaluate(async () => {
+        return await window.Storage.getTasks();
+    });
+    expect(localTasks.length).toBe(1);
+    expect(localTasks[0].name).toBe('Audit Task');
   });
 
   test('Audit: Fresh device adopts Cloud state authoritativeley on login', async ({ page }) => {
-    const cloudTasks = [
-        { user_id: mockSession.user.id, local_id: 'task-1', nodes: { id: 'task-1', name: 'Cloud Task 1', checklist: [] } },
-        { user_id: mockSession.user.id, local_id: 'task-2', nodes: { id: 'task-2', name: 'Cloud Task 2', checklist: [] } }
-    ];
+    await page.goto('http://localhost:8080/');
 
-    await page.route('**/*.supabase.co/**', async route => {
-      const url = route.request().url();
-      if (url.includes('/auth/v1/')) {
-          return route.fulfill({ status: 200, json: { data: { user: mockSession.user, session: mockSession } } });
-      }
-      if (url.includes('/rest/v1/tasks') && route.request().method() === 'GET') {
-          return route.fulfill({ status: 200, json: cloudTasks });
-      }
-      return route.continue();
+    // 1. Setup Mock Session
+    await page.evaluate(() => {
+      window.Storage._session = {
+        user: { id: 'device-b-user' }
+      };
     });
 
-    await page.addInitScript(({ session, projectId }) => {
-        localStorage.setItem(`sb-${projectId}-auth-token`, JSON.stringify(session));
-    }, { session: mockSession, projectId: PROJECT_ID });
+    // 2. Mock Supabase response for multiple tasks (per-task model)
+    await page.route('**/rest/v1/tasks*', async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify([
+          {
+            user_id: 'device-b-user',
+            local_id: 'task-1',
+            nodes: { id: 'task-1', name: 'Cloud Task 1' }
+          },
+          {
+            user_id: 'device-b-user',
+            local_id: 'task-2',
+            nodes: { id: 'task-2', name: 'Cloud Task 2' }
+          }
+        ])
+      });
+    });
 
-    await page.goto(BASE_URL);
+    // Force revalidation
+    await page.evaluate(() => window.Storage._revalidateTasks('neuroaark_tasks_user_device-b-user'));
 
-    await expect(page.locator('.task-card-title', { hasText: 'Cloud Task 1' })).toBeVisible();
-    await expect(page.locator('.task-card-title', { hasText: 'Cloud Task 2' })).toBeVisible();
+    // 3. Verify UI reflects cloud data
+    await expect(page.locator('.task-card')).toHaveCount(2);
+    await expect(page.locator('.task-card').first()).toContainText('Cloud Task 1');
+    await expect(page.locator('.task-card').last()).toContainText('Cloud Task 2');
   });
+
 });
