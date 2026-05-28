@@ -79,7 +79,10 @@ const Auth = {
       if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && isLoggedIn) || userChanged) {
         if (isLoggedIn) {
           console.log('[AUTH] [TRACE] User authenticated, changed, or initial session. Triggering sync flow.');
-          await Storage.syncOnLogin();
+          // Ensure we don't start multiple syncs
+          if (!Storage._hasCompletedInitialSync && !Storage._isHydrating) {
+            await Storage.syncOnLogin();
+          }
         }
       }
 
