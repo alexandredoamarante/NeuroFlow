@@ -1,9 +1,15 @@
 const authBtn = document.getElementById('authBtn');
 const authText = document.getElementById('authText');
+const workspaceModal = document.getElementById('workspaceModal');
+const workspaceClose = document.getElementById('workspaceClose');
+const workspaceKeyDisplay = document.getElementById('workspaceKeyDisplay');
+const workspaceInput = document.getElementById('workspaceInput');
+const joinWorkspaceBtn = document.getElementById('joinWorkspaceBtn');
+const copyWorkspaceKey = document.getElementById('copyWorkspaceKey');
 
 /**
- * Authentication module for neuroaark.
- * Handles Supabase OAuth with Google, account switching, and session management.
+ * Authentication and Workspace management module for neuroaark.
+ * Handles Supabase OAuth (Legacy) and Workspace-key synchronization.
  */
 const Auth = {
   isAuthActionInProgress: false,
@@ -11,6 +17,9 @@ const Auth = {
   async init() {
     console.log('[AUTH] [TRACE] Auth.init starting.');
     if (!authBtn) return;
+
+    // Workspace UI setup
+    this.setupWorkspaceUI();
 
     // Check if Supabase is available
     if (!Storage || !Storage.supabase) {
@@ -34,26 +43,11 @@ const Auth = {
       console.error('[AUTH] [TRACE] Error fetching initial session:', err);
     }
 
-    // 2. Register a single robust event listener for both desktop and mobile
-    // Use 'click' as it's the most standard and handles touch delay/behavior consistently
-    authBtn.addEventListener('click', async (e) => {
+    // REPURPOSED: Auth button now opens workspace modal
+    authBtn.addEventListener('click', (e) => {
       e.preventDefault();
       e.stopPropagation();
-
-      if (this.isAuthActionInProgress) return;
-      this.isAuthActionInProgress = true;
-
-      try {
-        const { data: { session } } = await Storage.supabase.auth.getSession();
-        if (session && session.user) {
-          await this.logout();
-        } else {
-          await this.login();
-        }
-      } catch (err) {
-        console.error('Auth action error:', err);
-        this.isAuthActionInProgress = false; // Reset on error to allow retry
-      }
+      this.openWorkspaceModal();
     });
 
     // 3. Listen for auth changes to sync state across the app
@@ -91,8 +85,55 @@ const Auth = {
       }
     });
 
+    // Ensure workspace sync starts
+    const wsId = Storage.getWorkspaceId();
+    Storage.initRealtime(wsId);
+
     // Make button visible once initialized
     authBtn.style.display = 'flex';
+  },
+
+  setupWorkspaceUI() {
+    workspaceClose?.addEventListener('click', () => {
+      if (workspaceModal) workspaceModal.style.display = 'none';
+    });
+
+    workspaceModal?.addEventListener('click', (e) => {
+      if (e.target === workspaceModal) workspaceModal.style.display = 'none';
+    });
+
+    copyWorkspaceKey?.addEventListener('click', () => {
+      const key = Storage.getWorkspaceId();
+      navigator.clipboard.writeText(key).then(() => {
+        const originalSvg = copyWorkspaceKey.innerHTML;
+        copyWorkspaceKey.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M20 6L9 17l-5-5"></path></svg>';
+        setTimeout(() => { copyWorkspaceKey.innerHTML = originalSvg; }, 2000);
+      });
+    });
+
+    joinWorkspaceBtn?.addEventListener('click', async () => {
+      const newKey = workspaceInput.value.trim();
+      if (!newKey) return;
+
+      if (confirm('Mudar de workspace irá carregar novos dados. Continuar?')) {
+        joinWorkspaceBtn.disabled = true;
+        await Storage.setWorkspaceId(newKey);
+        this.updateUI(Storage._session);
+        window.location.reload();
+      }
+    });
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === 'Escape' && workspaceModal && workspaceModal.style.display === 'flex') {
+        workspaceModal.style.display = 'none';
+      }
+    });
+  },
+
+  openWorkspaceModal() {
+    if (!workspaceModal) return;
+    workspaceKeyDisplay.textContent = Storage.getWorkspaceId();
+    workspaceModal.style.display = 'flex';
   },
 
   /**
@@ -145,14 +186,9 @@ const Auth = {
    */
   updateUI(session) {
     if (!authBtn || !authText) return;
-
-    if (session && session.user) {
-      authText.textContent = 'Sair';
-      authBtn.title = `Logado como ${session.user.email}`;
-    } else {
-      authText.textContent = 'Entrar';
-      authBtn.title = 'Entrar com Google';
-    }
+    authText.textContent = 'Sync';
+    const wsId = Storage.getWorkspaceId();
+    authBtn.title = `Workspace: ${wsId}` + (session?.user ? ` | Logado como ${session.user.email}` : '');
   }
 };
 
