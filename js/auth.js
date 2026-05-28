@@ -6,6 +6,7 @@ const workspaceKeyDisplay = document.getElementById('workspaceKeyDisplay');
 const workspaceInput = document.getElementById('workspaceInput');
 const joinWorkspaceBtn = document.getElementById('joinWorkspaceBtn');
 const copyWorkspaceKey = document.getElementById('copyWorkspaceKey');
+const leaveWorkspaceBtn = document.getElementById('leaveWorkspaceBtn');
 
 /**
  * Authentication and Workspace management module for neuroaark.
@@ -115,10 +116,31 @@ const Auth = {
       const newKey = workspaceInput.value.trim();
       if (!newKey) return;
 
-      if (confirm('Mudar de workspace irá carregar novos dados. Continuar?')) {
-        joinWorkspaceBtn.disabled = true;
-        await Storage.setWorkspaceId(newKey);
+      joinWorkspaceBtn.disabled = true;
+      const exists = await Storage.checkWorkspaceExists(newKey);
+
+      let proceed = false;
+      if (exists) {
+        proceed = confirm(`Deseja entrar no workspace "${newKey}"?`);
+      } else {
+        proceed = confirm(`O workspace "${newKey}" não existe. Deseja criá-lo?`);
+      }
+
+      if (proceed) {
+        await Storage.setWorkspaceId(newKey, { replaceLocalState: true });
         this.updateUI(Storage._session);
+        if (workspaceModal) workspaceModal.style.display = 'none';
+        // The event listener for 'workspaceChanged' or a reload could be used here
+        // But the requirement says "force full remote hydration" and "rerender UI immediately"
+        // setWorkspaceId already handles hydration and dispatching an event
+        window.location.reload();
+      }
+      joinWorkspaceBtn.disabled = false;
+    });
+
+    leaveWorkspaceBtn?.addEventListener('click', async () => {
+      if (confirm('Tem certeza que deseja sair deste workspace? Você será movido para um novo workspace anônimo.')) {
+        await Storage.leaveWorkspace();
         window.location.reload();
       }
     });
