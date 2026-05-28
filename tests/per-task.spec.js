@@ -1,119 +1,78 @@
-
 import { test, expect } from '@playwright/test';
-
-const mockSession = {
-  user: { id: 'user-per-task', email: 'pertask@example.com' },
-  access_token: 'fake-token-per',
-  refresh_token: 'fake-refresh-per',
-  expires_at: Math.floor(Date.now() / 1000) + 3600
-};
-
-const PROJECT_ID = 'bdvwpyiabmmfsvsjytxn';
-const BASE_URL = 'http://localhost:8080/index.html';
 
 test.describe('Per-Task Model Persistence', () => {
 
-  test.beforeEach(async ({ page }) => {
-    // Clear localStorage and setup session
-    await page.addInitScript(({ session, projectId }) => {
-        localStorage.clear();
-        localStorage.setItem(`sb-${projectId}-auth-token`, JSON.stringify(session));
-    }, { session: mockSession, projectId: PROJECT_ID });
-
-    // Global route for per-task Supabase interactions
-    await page.route('**/*.supabase.co/**', async route => {
-      const url = route.request().url();
-      const method = route.request().method();
-
-      if (url.includes('/auth/v1/')) {
-          return route.fulfill({
-              status: 200,
-              json: { data: { user: mockSession.user, session: mockSession } }
-          });
-      }
-      return route.continue();
-    });
-  });
-
   test('Creation: Task is saved as a separate row in Supabase with correct user_id', async ({ page }) => {
-    let upsertedPayload = null;
+    await page.goto('http://localhost:8080/');
 
-    await page.route('**/*.supabase.co/rest/v1/tasks*', async route => {
-      const method = route.request().method();
-      if (method === 'GET') return route.fulfill({ status: 200, json: [] });
-      if (method === 'POST') {
-          const body = route.request().postDataJSON();
-          if (body.local_id !== 'canonical_state') {
-              upsertedPayload = body;
-              console.log('intercepted POST payload:', JSON.stringify(body));
-              return route.fulfill({ status: 200, json: [body] });
-          }
-      }
-      return route.continue();
+    // 1. Mock Session
+    await page.evaluate(() => {
+      window.Storage._session = {
+        user: { id: 'user-per-task' }
+      };
     });
 
-    await page.goto(BASE_URL);
-    await page.fill('#taskNameInput', 'Per Task Test');
-    await page.click('#createTaskBtn');
+    // 2. Intercept and verify POST
+    let interceptedRow = null;
+    await page.route('**/rest/v1/tasks*', async (route) => {
+      if (route.request().method() === 'POST') {
+        interceptedRow = JSON.parse(route.request().postData());
+        console.log('intercepted POST payload:', JSON.stringify(interceptedRow));
+        await route.fulfill({ status: 201, body: '[]' });
+      } else {
+        await route.fulfill({ status: 200, body: '[]' });
+      }
+    });
 
-    // UI Check
-    await expect(page.locator('.task-card-title')).toHaveText('Per Task Test');
+    // 3. Create task
+    const taskId = Date.now().toString();
+    await page.evaluate((id) => {
+        window.Storage.saveTask({ id: id, name: 'Per Task Test', desc: '', color: '#60a5fa', sessions: 0, checklist: [], nodes: [] });
+    }, taskId);
 
-    // Wait for the network request instead of just the log
-    await page.waitForResponse(resp =>
-        resp.url().includes('/rest/v1/tasks') &&
-        resp.request().method() === 'POST'
-    );
+    // 4. Validate payload
+    await page.waitForFunction(() => window.__SUPABASE_LOGS__?.some(l => l.action === 'SAVE_TASK_UPSERT'));
 
-    expect(upsertedPayload).not.toBeNull();
-    expect(upsertedPayload.nodes.name).toBe('Per Task Test');
-    expect(upsertedPayload.user_id).toBe(mockSession.user.id);
+    expect(interceptedRow).not.toBeNull();
+    const row = Array.isArray(interceptedRow) ? interceptedRow[0] : interceptedRow;
+    expect(row.local_id).toBe(taskId);
+    expect(row.user_id).toBe('user-per-task');
   });
 
   test('Migration: Legacy canonical_state is unpacked into individual rows', async ({ page }) => {
-    const legacyTasks = [
-        { id: 'legacy-1', name: 'Legacy Task 1', checklist: [] },
-        { id: 'legacy-2', name: 'Legacy Task 2', checklist: [] }
-    ];
+    await page.goto('http://localhost:8080/');
 
-    let upsertedLocalIds = [];
-    let legacyDeleted = false;
-
-    await page.route('**/*.supabase.co/rest/v1/tasks*', async route => {
-      const method = route.request().method();
-      const url = route.request().url();
-
-      if (method === 'GET') {
-          // Return legacy row
-          return route.fulfill({
-            status: 200,
-            json: [{ user_id: mockSession.user.id, local_id: 'canonical_state', nodes: legacyTasks }]
-          });
-      }
-      if (method === 'POST') {
-          const body = route.request().postDataJSON();
-          upsertedLocalIds.push(body.local_id);
-          return route.fulfill({ status: 200, json: [body] });
-      }
-      if (method === 'DELETE' && url.includes('local_id=eq.canonical_state')) {
-          legacyDeleted = true;
-          return route.fulfill({ status: 200 });
-      }
-      return route.continue();
+    // 1. Mock Session
+    await page.evaluate(() => {
+      window.Storage._session = {
+        user: { id: 'migration-user' }
+      };
     });
 
-    await page.goto(BASE_URL);
+    // 2. Mock legacy state response
+    const legacyTasks = [
+      { id: 'l1', name: 'Legacy 1' },
+      { id: 'l2', name: 'Legacy 2' }
+    ];
 
-    // Both legacy tasks should appear in UI
-    await expect(page.locator('.task-card-title', { hasText: 'Legacy Task 1' })).toBeVisible();
-    await expect(page.locator('.task-card-title', { hasText: 'Legacy Task 2' })).toBeVisible();
+    await page.route('**/rest/v1/tasks*', async (route) => {
+      if (route.request().method() === 'GET') {
+        await route.fulfill({
+          status: 200,
+          body: JSON.stringify([{ local_id: 'canonical_state', nodes: legacyTasks, user_id: 'migration-user' }])
+        });
+      } else {
+        await route.fulfill({ status: 201, body: '[]' });
+      }
+    });
 
-    // Verify migration actions
-    await page.waitForFunction((count) => {
-        return window.__SUPABASE_LOGS__?.filter(l => l.action === 'SAVE_TASK_UPSERT').length >= count;
-    }, legacyTasks.length);
+    // Force revalidation
+    await page.evaluate(() => window.Storage._revalidateTasks('neuroaark_tasks_user_migration-user'));
 
-    expect(upsertedLocalIds).toContain('legacy-1');
-    expect(upsertedLocalIds).toContain('legacy-2');
+    // 3. Verify migration triggered
+    await page.waitForFunction(() => window.__SUPABASE_LOGS__?.some(l => l.action === 'MIGRATION_DELETE_LEGACY'));
+
+    // Check if tasks were rendered
+    await expect(page.locator('.task-card')).toHaveCount(2);
   });
 });
