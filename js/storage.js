@@ -10,6 +10,7 @@ const Storage = {
   _revalidationPromises: {},
   _syncQueue: Promise.resolve(),
   _realtimeChannel: null,
+  _realtimeDebounce: null,
   _offlineQueue: [],
 
   /**
@@ -94,6 +95,21 @@ const Storage = {
     return this._sessionPromise;
   },
 
+  async requireUser() {
+    try {
+      const { data: { session }, error } = await this.supabase.auth.getSession();
+      if (error || !session || !session.user || !session.user.id) {
+        return null;
+      }
+      this._session = session;
+      this._lastCheck = Date.now();
+      return session.user;
+    } catch (e) {
+      console.error('[AUTH] requireUser error:', e.message);
+      return null;
+    }
+  },
+
   async getTasksKey() {
     const session = await this.getSession();
     if (session && session.user) return `neuroaark_tasks_user_${session.user.id}`;
@@ -149,7 +165,7 @@ const Storage = {
 
     this._revalidationPromises[key] = (async () => {
       try {
-        const { data: { user } } = await this.supabase.auth.getUser();
+        const user = await this.requireUser();
         if (!user) return this._getLocalState(key).nodes;
 
         const { data, error } = await this.supabase
@@ -165,31 +181,51 @@ const Storage = {
         }
 
         const dataArray = Array.isArray(data) ? data : (data ? [data] : []);
-        let remoteTasks = [];
-        let legacyState = dataArray.find(r => r.local_id === 'canonical_state');
+        const localState = this._getLocalState(key);
+        let localTasks = [...(localState.nodes || [])];
+        let hasChanges = false;
 
+        let legacyState = dataArray.find(r => r.local_id === 'canonical_state');
         if (legacyState) {
-          remoteTasks = legacyState.nodes || [];
+          const remoteTasks = legacyState.nodes || [];
+          // Legacy mode: overwrite local with canonical if it exists
+          localTasks = remoteTasks;
+          hasChanges = true;
           this._migrateLegacyData(user, legacyState);
         } else {
-          remoteTasks = dataArray
-            .filter(r => r.local_id !== 'canonical_state')
-            .map(r => r.nodes);
+          // Per-task mode: surgical merge based on version
+          dataArray.filter(r => r.local_id !== 'canonical_state').forEach(remoteRow => {
+            const remoteTask = remoteRow.nodes;
+            const remoteVersion = remoteRow.version || 0;
+            const localIdx = localTasks.findIndex(t => String(t.id) === String(remoteRow.local_id));
+
+            if (localIdx === -1) {
+              localTasks.push(remoteTask);
+              hasChanges = true;
+            } else {
+              const localTask = localTasks[localIdx];
+              const localVersion = localTask.version || 0;
+              if (remoteVersion > localVersion) {
+                localTasks[localIdx] = remoteTask;
+                hasChanges = true;
+              }
+            }
+          });
         }
 
-        const newState = {
-          nodes: remoteTasks,
-          version: Date.now(),
-          updated_at: new Date().toISOString(),
-          device_id: this.getDeviceId()
-        };
+        if (hasChanges || !this._hasCompletedInitialSync) {
+          const newState = {
+            ...localState,
+            nodes: localTasks,
+            updated_at: new Date().toISOString(),
+            device_id: this.getDeviceId()
+          };
+          this._setLocalState(key, newState);
+          window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: localTasks }));
+        }
 
-        this._setLocalState(key, newState);
         this._hasCompletedInitialSync = true;
-
-        window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: remoteTasks }));
-
-        return remoteTasks;
+        return localTasks;
       } catch (e) {
         console.error('[HYDRATE] Hydration exception:', e);
         return this._getLocalState(key).nodes;
@@ -223,6 +259,10 @@ const Storage = {
   async saveTask(task) {
     const key = await this.getTasksKey();
 
+    // Attach version for conflict resolution
+    task.version = Date.now();
+    task.updated_at = new Date().toISOString();
+
     // 1. OPTIMISTIC UPDATE: Local cache immediately
     const state = this._getLocalState(key);
     const tasks = [...(state.nodes || [])];
@@ -237,21 +277,14 @@ const Storage = {
 
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
     const runUpsert = async () => {
-      let user = this._session?.user;
-      if (!user) {
-          const { data: authData } = await this.supabase.auth.getUser();
-          user = authData?.user;
-      }
-
+      const user = await this.requireUser();
       if (!user) return;
-      const userId = user.id;
-      if (!userId || userId === 'undefined') return;
 
       const payload = {
-        user_id: userId,
+        user_id: user.id,
         local_id: String(task.id),
         nodes: JSON.parse(JSON.stringify(task)),
-        version: Date.now(),
+        version: task.version,
         device_id: this.getDeviceId()
       };
 
@@ -284,7 +317,7 @@ const Storage = {
 
     // 3. BACKGROUND SYNC
     const runDelete = async () => {
-      const { data: { user } } = await this.supabase.auth.getUser();
+      const user = await this.requireUser();
       if (!user) return;
 
       const { data, error } = await this.supabase.from('tasks').delete().match({ user_id: user.id, local_id: id });
@@ -396,9 +429,13 @@ const Storage = {
     if (payload.new && payload.new.device_id === this.getDeviceId()) return;
     if (payload.new && payload.new.local_id === 'canonical_state') return;
 
-    // Queue revalidation to avoid interupting active syncs
-    const key = await this.getTasksKey();
-    this._enqueue(() => this._revalidateTasks(key));
+    // Debounce revalidation to avoid floods and hydration loops
+    if (this._realtimeDebounce) clearTimeout(this._realtimeDebounce);
+
+    this._realtimeDebounce = setTimeout(async () => {
+      const key = await this.getTasksKey();
+      this._enqueue(() => this._revalidateTasks(key));
+    }, 300);
   }
 };
 

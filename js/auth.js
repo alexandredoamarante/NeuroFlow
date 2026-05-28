@@ -76,11 +76,9 @@ const Auth = {
       const newUserId = session?.user?.id;
       const userChanged = oldUserId !== newUserId;
 
-      if (event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && isLoggedIn) || userChanged) {
-        if (isLoggedIn) {
+      if ((event === 'SIGNED_IN' || (event === 'INITIAL_SESSION' && isLoggedIn) || userChanged) && isLoggedIn) {
           console.log('[AUTH] [TRACE] User authenticated, changed, or initial session. Triggering sync flow.');
           await Storage.syncOnLogin();
-        }
       }
 
       if (event === 'SIGNED_OUT') {
