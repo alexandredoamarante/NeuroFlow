@@ -10,14 +10,31 @@ ALTER TABLE public.tasks ADD COLUMN IF NOT EXISTS workspace_id TEXT;
 -- 3. Make user_id optional to allow sync without authentication
 ALTER TABLE public.tasks ALTER COLUMN user_id DROP NOT NULL;
 
--- 4. Update unique constraint
+-- 4. Change version to BIGINT to handle Date.now() timestamps
+ALTER TABLE public.tasks ALTER COLUMN version TYPE BIGINT;
+
+-- 5. Ensure columns exist and have correct permissions
+DO $$
+BEGIN
+    IF NOT EXISTS (SELECT 1 FROM information_schema.columns WHERE table_name = 'tasks' AND column_name = 'device_id') THEN
+        ALTER TABLE public.tasks ADD COLUMN device_id TEXT;
+    END IF;
+END $$;
+
+-- Grant permissions to public roles
+GRANT ALL ON public.tasks TO anon;
+GRANT ALL ON public.tasks TO authenticated;
+GRANT ALL ON public.tasks TO service_role;
+
+-- 6. Update unique constraint
 -- We replace the user-based constraint with a workspace-based one.
 ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_user_id_local_id_key;
+ALTER TABLE public.tasks DROP CONSTRAINT IF EXISTS tasks_workspace_id_local_id_key;
 ALTER TABLE public.tasks ADD CONSTRAINT tasks_workspace_id_local_id_key UNIQUE (workspace_id, local_id);
 
--- 5. Update Row Level Security (RLS) Policies
+-- 7. Update Row Level Security (RLS) Policies
 -- Security Note: We use workspace_id as a shared key.
--- Clients must include the workspace_id in their queries.
+-- Isolation is enforced by filtering on workspace_id.
 
 DROP POLICY IF EXISTS "Users can view their own tasks" ON public.tasks;
 DROP POLICY IF EXISTS "Users can insert their own tasks" ON public.tasks;
