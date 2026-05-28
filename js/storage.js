@@ -28,6 +28,7 @@ const Storage = {
   _hasCompletedInitialSync: false,
   _isHydrating: false,
   _isTransitioning: false,
+  _suspendOutgoingSync: false,
   _deviceId: null,
   _workspaceId: null,
   _pendingRealtimeUpdates: [],
@@ -111,10 +112,14 @@ const Storage = {
       const key = await this.getTasksKey();
       const state = this._getLocalState(key);
       const tasks = state.nodes || [];
-      for (const task of tasks) {
-        // saveTask handles the serial queueing and workspace ID capture
-        this.saveTask(task);
-      }
+
+      // Enqueue all tasks for upload
+      const uploadPromises = tasks.map(task => this.saveTask(task));
+
+      // Wait for the entire queue to drain to ensure consistency before reload
+      await Promise.all(uploadPromises);
+      await this._syncQueue;
+      console.log('[SYNC] [PUSH] Initial local state sync completed.');
     }
   },
 
@@ -135,6 +140,7 @@ const Storage = {
   async resetWorkspaceLifecycle() {
     console.log('[WORKSPACE] [RESET] Resetting all lifecycle state...');
     this._isTransitioning = true;
+    this._suspendOutgoingSync = true;
     this._hasCompletedInitialSync = false;
 
     // 1. Destroy old realtime
@@ -202,6 +208,7 @@ const Storage = {
     });
 
     this._isTransitioning = false;
+    this._suspendOutgoingSync = false;
     window.dispatchEvent(new CustomEvent('workspaceChanged', { detail: { workspaceId: id } }));
   },
 
@@ -272,6 +279,7 @@ const Storage = {
     this._revalidationPromises[key] = (async () => {
       try {
         this._isHydrating = true;
+        this._suspendOutgoingSync = true;
         const workspaceId = this.getWorkspaceId();
         console.log(`[HYDRATION] [START] Revalidating workspace: ${workspaceId}`, options);
 
@@ -365,22 +373,11 @@ const Storage = {
             // Or tasks that were deleted remotely
             localTasks.forEach(localTask => {
               if (!remoteTasksMap.has(String(localTask.id))) {
-                // If we haven't completed initial sync yet, we should be VERY careful about deleting local data.
-                // It might be that the remote fetch failed or returned partial data.
-                if (!this._hasCompletedInitialSync) {
-                   console.log(`[HYDRATION] [KEEP] Preserving local-only task during initial sync: ${localTask.id}`);
-                   mergedTasks.push(localTask);
-                } else {
-                  // Is it very new? (Created in last 30 seconds)
-                  const isVeryNew = (Date.now() - (localTask.version || 0)) < 30000;
-                  if (isVeryNew) {
-                    console.log(`[HYDRATION] [KEEP] Keeping local-only task (likely pending sync): ${localTask.id}`);
-                    mergedTasks.push(localTask);
-                  } else {
-                    console.log(`[HYDRATION] [DELETE] Removing local task not found in cloud: ${localTask.id}`);
-                    hasChanges = true;
-                  }
-                }
+                // RULE: Never delete local data during hydration unless replaceLocalState is explicitly requested.
+                // This prevents "disappearing tasks" bug due to network/RLS issues.
+                console.log(`[HYDRATION] [KEEP] Preserving local task missing from cloud: ${localTask.id}`);
+                mergedTasks.push(localTask);
+                // Note: We don't mark hasChanges=true because it's already local
               }
             });
 
@@ -407,6 +404,7 @@ const Storage = {
         return this._getLocalState(key).nodes;
       } finally {
         this._isHydrating = false;
+        this._suspendOutgoingSync = false;
         setTimeout(() => { delete this._revalidationPromises[key]; }, 100);
       }
     })();
@@ -454,9 +452,9 @@ const Storage = {
   },
 
   async saveTask(task) {
-    if (this._isTransitioning) {
-      console.warn('[PERSISTENCE] [SAVE] Skipping save: Workspace is transitioning.');
-      return;
+    if (this._isTransitioning || this._suspendOutgoingSync) {
+      console.warn('[PERSISTENCE] [SAVE] [BLOCKED] Sync suspended or transitioning.');
+      // Update local state even if sync is enqueued/suspended to ensure UI consistency
     }
     const key = await this.getTasksKey();
     const workspaceIdAtTimeOfSave = this.getWorkspaceId();
@@ -482,8 +480,8 @@ const Storage = {
 
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
     const runUpsert = async () => {
-      if (!this.isSyncEnabled()) {
-        console.log('[SYNC] [SKIP] Sync disabled, skipping cloud upsert.');
+      if (!this.isSyncEnabled() || this._suspendOutgoingSync) {
+        console.log('[SYNC] [SKIP] Sync disabled or suspended.');
         return;
       }
       // Use the workspace ID that was active when saveTask was CALLED
@@ -526,9 +524,8 @@ const Storage = {
   },
 
   async deleteTask(id) {
-    if (this._isTransitioning) {
-      console.warn('[PERSISTENCE] [DELETE] Skipping delete: Workspace is transitioning.');
-      return;
+    if (this._isTransitioning || this._suspendOutgoingSync) {
+      console.warn('[PERSISTENCE] [DELETE] [BLOCKED] Sync suspended or transitioning.');
     }
     const key = await this.getTasksKey();
     const workspaceIdAtTimeOfDelete = this.getWorkspaceId();
@@ -543,8 +540,8 @@ const Storage = {
 
     // 3. BACKGROUND SYNC
     const runDelete = async () => {
-      if (!this.isSyncEnabled()) {
-        console.log('[SYNC] [SKIP] Sync disabled, skipping cloud delete.');
+      if (!this.isSyncEnabled() || this._suspendOutgoingSync) {
+        console.log('[SYNC] [SKIP] Sync disabled or suspended.');
         return;
       }
       const workspaceId = workspaceIdAtTimeOfDelete;
