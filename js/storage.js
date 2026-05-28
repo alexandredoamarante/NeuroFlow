@@ -89,9 +89,33 @@ const Storage = {
     if (!id) {
       id = this.generateWorkspaceKey();
       localStorage.setItem('neuroaark_workspace_id', id);
+      // New users start with sync disabled (local offline mode)
+      this.setSyncEnabled(false);
     }
     this._workspaceId = id;
     return id;
+  },
+
+  isSyncEnabled() {
+    const val = localStorage.getItem('neuroaark_sync_enabled');
+    return val === 'true';
+  },
+
+  async setSyncEnabled(enabled) {
+    console.log(`[SYNC] [STATE] Setting sync enabled: ${enabled}`);
+    localStorage.setItem('neuroaark_sync_enabled', enabled ? 'true' : 'false');
+
+    // If enabling sync, trigger a one-time push of all local tasks to the cloud
+    if (enabled) {
+      console.log('[SYNC] [PUSH] Sync enabled. Propagating local state to cloud...');
+      const key = await this.getTasksKey();
+      const state = this._getLocalState(key);
+      const tasks = state.nodes || [];
+      for (const task of tasks) {
+        // saveTask handles the serial queueing and workspace ID capture
+        this.saveTask(task);
+      }
+    }
   },
 
   async checkWorkspaceExists(id) {
@@ -111,6 +135,7 @@ const Storage = {
   async resetWorkspaceLifecycle() {
     console.log('[WORKSPACE] [RESET] Resetting all lifecycle state...');
     this._isTransitioning = true;
+    this._hasCompletedInitialSync = false;
 
     // 1. Destroy old realtime
     if (this._realtimeChannel) {
@@ -182,6 +207,7 @@ const Storage = {
 
   async leaveWorkspace() {
     console.log('[WORKSPACE] Leaving workspace...');
+    this.setSyncEnabled(false);
     const newKey = this.generateWorkspaceKey();
     await this.setWorkspaceId(newKey, { replaceLocalState: true });
   },
@@ -216,7 +242,7 @@ const Storage = {
   async getTasks() {
     const key = await this.getTasksKey();
 
-    if (!this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
+    if (this.isSyncEnabled() && !this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
       this._revalidateTasks(key);
     }
     const state = this._getLocalState(key);
@@ -226,7 +252,7 @@ const Storage = {
   async getTask(id) {
     const key = await this.getTasksKey();
 
-    if (!this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
+    if (this.isSyncEnabled() && !this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
       this._revalidateTasks(key);
     }
     const state = this._getLocalState(key);
@@ -235,6 +261,12 @@ const Storage = {
   },
 
   async _revalidateTasks(key, options = {}) {
+    if (!this.isSyncEnabled()) {
+      console.log('[HYDRATION] [SKIP] Sync is disabled (Offline Mode).');
+      this._hasCompletedInitialSync = true;
+      return this._getLocalState(key).nodes;
+    }
+
     if (this._revalidationPromises[key]) return this._revalidationPromises[key];
 
     this._revalidationPromises[key] = (async () => {
@@ -450,6 +482,10 @@ const Storage = {
 
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
     const runUpsert = async () => {
+      if (!this.isSyncEnabled()) {
+        console.log('[SYNC] [SKIP] Sync disabled, skipping cloud upsert.');
+        return;
+      }
       // Use the workspace ID that was active when saveTask was CALLED
       const workspaceId = workspaceIdAtTimeOfSave;
 
@@ -507,6 +543,10 @@ const Storage = {
 
     // 3. BACKGROUND SYNC
     const runDelete = async () => {
+      if (!this.isSyncEnabled()) {
+        console.log('[SYNC] [SKIP] Sync disabled, skipping cloud delete.');
+        return;
+      }
       const workspaceId = workspaceIdAtTimeOfDelete;
       const { data, error } = await this.supabase
         .from('tasks')
@@ -530,6 +570,11 @@ const Storage = {
 
 
   async initRealtime(workspaceId) {
+    if (!this.isSyncEnabled()) {
+      console.log('[REALTIME] [SKIP] Sync is disabled.');
+      return;
+    }
+
     if (this._isSubscribing) return;
 
     const channelName = `public:tasks:ws:${workspaceId}`;
