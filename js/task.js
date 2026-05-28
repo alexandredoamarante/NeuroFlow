@@ -152,8 +152,8 @@ init();
 
 // Listen for background updates from Supabase
 window.addEventListener('tasksUpdated', async (e) => {
-  // Prevent refresh if user is currently selecting text, interacting with a highlight popover, or syncing
-  if (window.getSelection().toString().trim() || window.isInteractingWithHighlight || Storage._isSyncing) {
+  // Prevent refresh if user is currently selecting text or interacting with a highlight popover
+  if (window.getSelection().toString().trim() || window.isInteractingWithHighlight) {
     return;
   }
 
