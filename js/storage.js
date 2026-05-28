@@ -29,6 +29,7 @@ const Storage = {
   _isHydrating: false,
   _isTransitioning: false,
   _suspendOutgoingSync: false,
+  _failedColumns: new Set(),
   _deviceId: null,
   _workspaceId: null,
   _pendingRealtimeUpdates: [],
@@ -213,10 +214,15 @@ const Storage = {
   },
 
   async leaveWorkspace() {
-    console.log('[WORKSPACE] Leaving workspace...');
+    console.log('[WORKSPACE] [LEAVE] Leaving workspace. Sync will be disabled.');
+    // RULE: We DO NOT clear local tasks here. We just switch workspace and disable sync.
+    // This allows the user to keep their data in the new anonymous workspace if they want.
     this.setSyncEnabled(false);
     const newKey = this.generateWorkspaceKey();
-    await this.setWorkspaceId(newKey, { replaceLocalState: true });
+
+    // We DO NOT use replaceLocalState: true because we want to preserve the data locally
+    // in the new anonymous workspace context.
+    await this.setWorkspaceId(newKey, { replaceLocalState: false });
   },
 
 
@@ -453,8 +459,7 @@ const Storage = {
 
   async saveTask(task) {
     if (this._isTransitioning || this._suspendOutgoingSync) {
-      console.warn('[PERSISTENCE] [SAVE] [BLOCKED] Sync suspended or transitioning.');
-      // Update local state even if sync is enqueued/suspended to ensure UI consistency
+      console.warn('[SYNC] [SAVE] [LOCKED] Sync suspended or transitioning. Queueing for later.');
     }
     const key = await this.getTasksKey();
     const workspaceIdAtTimeOfSave = this.getWorkspaceId();
@@ -480,36 +485,55 @@ const Storage = {
 
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
     const runUpsert = async () => {
+      // WAIT if sync is temporarily suspended (e.g. during hydration)
+      let waitCount = 0;
+      while (this._suspendOutgoingSync && waitCount < 50) {
+        await new Promise(r => setTimeout(r, 100));
+        waitCount++;
+      }
+
       if (!this.isSyncEnabled() || this._suspendOutgoingSync) {
-        console.log('[SYNC] [SKIP] Sync disabled or suspended.');
+        console.log('[SYNC] [SKIP] Sync disabled or still suspended after wait.');
         return;
       }
-      // Use the workspace ID that was active when saveTask was CALLED
+
       const workspaceId = workspaceIdAtTimeOfSave;
 
-      // Safety: If the current workspace has changed since the task was enqueued,
-      // we must be VERY careful. However, since we captured workspaceIdAtTimeOfSave,
-      // this specific upsert will still target the "correct" workspace it was meant for.
-
-      console.log(`[PERSISTENCE] [INSERT/UPSERT] Syncing task: ${task.id} to workspace: ${workspaceId}`);
+      console.log(`[SYNC] [REMOTE_WRITE] [UPSERT] Workspace: ${workspaceId}, Task: ${task.id}`);
 
       const payload = {
         workspace_id: workspaceId,
         local_id: String(task.id),
         nodes: JSON.parse(JSON.stringify(task)),
-        version: task.version,
-        device_id: this.getDeviceId()
+        version: task.version
       };
+
+      // Resilient column handling
+      if (!this._failedColumns.has('device_id')) {
+        payload.device_id = this.getDeviceId();
+      }
 
       const { data, error } = await this.supabase
         .from('tasks')
         .upsert(payload, { onConflict: 'workspace_id,local_id' })
         .select();
 
-      this._logNetwork('SAVE_TASK_UPSERT', { ...payload }, data, error);
+      this._logNetwork('REMOTE_WRITE_UPSERT', { ...payload }, data, error);
 
       if (error) {
-        console.error('[PERSISTENCE] [ERROR] Supabase upsert failed:', error.message, error.details);
+        // Detect missing columns (PostgREST PGRST204)
+        if (error.code === 'PGRST204' || error.message?.includes('column')) {
+            console.warn('[SYNC] [SCHEMA_CACHE] Detected missing column, retrying without device_id...');
+            this._failedColumns.add('device_id');
+            delete payload.device_id;
+            const retry = await this.supabase
+                .from('tasks')
+                .upsert(payload, { onConflict: 'workspace_id,local_id' })
+                .select();
+            if (retry.error) throw retry.error;
+            return;
+        }
+        console.error('[SYNC] [ERROR] Supabase upsert failed:', error.message, error.details);
         throw error;
       }
 
@@ -525,7 +549,7 @@ const Storage = {
 
   async deleteTask(id) {
     if (this._isTransitioning || this._suspendOutgoingSync) {
-      console.warn('[PERSISTENCE] [DELETE] [BLOCKED] Sync suspended or transitioning.');
+      console.warn('[SYNC] [DELETE] [LOCKED] Sync suspended or transitioning. Queueing for later.');
     }
     const key = await this.getTasksKey();
     const workspaceIdAtTimeOfDelete = this.getWorkspaceId();
@@ -540,18 +564,26 @@ const Storage = {
 
     // 3. BACKGROUND SYNC
     const runDelete = async () => {
+      let waitCount = 0;
+      while (this._suspendOutgoingSync && waitCount < 50) {
+        await new Promise(r => setTimeout(r, 100));
+        waitCount++;
+      }
+
       if (!this.isSyncEnabled() || this._suspendOutgoingSync) {
-        console.log('[SYNC] [SKIP] Sync disabled or suspended.');
+        console.log('[SYNC] [SKIP] Sync disabled or still suspended after wait.');
         return;
       }
       const workspaceId = workspaceIdAtTimeOfDelete;
+      console.log('[REMOTE_DELETE] Workspace:', workspaceId, 'Task:', id);
+
       const { data, error } = await this.supabase
         .from('tasks')
         .delete()
         .eq('workspace_id', workspaceId)
         .eq('local_id', String(id));
 
-      this._logNetwork('DELETE_TASK', { local_id: id, workspaceId }, data, error);
+      this._logNetwork('REMOTE_DELETE', { local_id: id, workspaceId }, data, error);
 
       if (error) {
         console.error('[SYNC] Supabase deletion failed:', error);
