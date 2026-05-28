@@ -88,6 +88,7 @@ const Auth = {
 
       if (event === 'TOKEN_REFRESHED' && isLoggedIn) {
         console.log('[AUTH] Token refreshed.');
+        await Storage._drainOfflineQueue();
       }
     });
 

@@ -11,6 +11,7 @@ const Storage = {
   _syncQueue: Promise.resolve(),
   _realtimeChannel: null,
   _realtimeDebounce: null,
+  _unsyncedIds: new Set(),
   _offlineQueue: [],
 
   /**
@@ -193,11 +194,15 @@ const Storage = {
           hasChanges = true;
           this._migrateLegacyData(user, legacyState);
         } else {
-          // Per-task mode: surgical merge based on version
+          // Per-task mode: surgical merge based on cloud authority
           dataArray.filter(r => r.local_id !== 'canonical_state').forEach(remoteRow => {
             const remoteTask = remoteRow.nodes;
             const remoteVersion = remoteRow.version || 0;
-            const localIdx = localTasks.findIndex(t => String(t.id) === String(remoteRow.local_id));
+            const localId = String(remoteRow.local_id);
+            const localIdx = localTasks.findIndex(t => String(t.id) === localId);
+
+            // Convergence fix: Trust cloud as authority unless there are pending local changes.
+            if (this._unsyncedIds.has(localId)) return;
 
             if (localIdx === -1) {
               localTasks.push(remoteTask);
@@ -205,7 +210,9 @@ const Storage = {
             } else {
               const localTask = localTasks[localIdx];
               const localVersion = localTask.version || 0;
-              if (remoteVersion > localVersion) {
+
+              // Only update if remote actually has different/newer data to avoid redundant renders
+              if (remoteVersion !== localVersion) {
                 localTasks[localIdx] = remoteTask;
                 hasChanges = true;
               }
@@ -276,9 +283,16 @@ const Storage = {
     window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: tasks }));
 
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
+    this._unsyncedIds.add(String(task.id));
+
     const runUpsert = async () => {
-      const user = await this.requireUser();
-      if (!user) return;
+      try {
+        const user = await this.requireUser();
+        if (!user) {
+          console.warn('[SYNC] No auth. Requeuing upsert for task:', task.id);
+          this._offlineQueue.push(() => this.saveTask(task));
+          return;
+        }
 
       const payload = {
         user_id: user.id,
@@ -291,14 +305,19 @@ const Storage = {
       const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'user_id,local_id' }).select();
       this._logNetwork('SAVE_TASK_UPSERT', { ...payload }, data, error);
 
-      if (error) {
-        console.error('[SYNC] Supabase upsert failed:', error);
-        throw error;
-      }
+        if (error) {
+          console.error('[SYNC] Supabase upsert failed:', error);
+          throw error;
+        }
 
-      // Re-dispatch after cloud confirmation to ensure UI reflects final state
-      const finalTasks = this._getLocalState(key).nodes;
-      window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: finalTasks }));
+        // Re-dispatch after cloud confirmation to ensure UI reflects final state
+        const finalTasks = this._getLocalState(key).nodes;
+        window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: finalTasks }));
+        this._unsyncedIds.delete(String(task.id));
+      } catch (e) {
+        console.error('[SYNC] Upsert failed:', e);
+        throw e;
+      }
     };
 
     return this._enqueue(runUpsert);
@@ -316,20 +335,32 @@ const Storage = {
     window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: filtered }));
 
     // 3. BACKGROUND SYNC
+    this._unsyncedIds.add(String(id));
+
     const runDelete = async () => {
-      const user = await this.requireUser();
-      if (!user) return;
+      try {
+        const user = await this.requireUser();
+        if (!user) {
+          console.warn('[SYNC] No auth. Requeuing deletion for task:', id);
+          this._offlineQueue.push(() => this.deleteTask(id));
+          return;
+        }
 
       const { data, error } = await this.supabase.from('tasks').delete().match({ user_id: user.id, local_id: id });
       this._logNetwork('DELETE_TASK', { local_id: id, user_id: user.id }, data, error);
 
-      if (error) {
-        console.error('[SYNC] Supabase deletion failed:', error);
-        throw error;
-      }
+        if (error) {
+          console.error('[SYNC] Supabase deletion failed:', error);
+          throw error;
+        }
 
-      const finalTasks = this._getLocalState(key).nodes;
-      window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: finalTasks }));
+        const finalTasks = this._getLocalState(key).nodes;
+        window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: finalTasks }));
+        this._unsyncedIds.delete(String(id));
+      } catch (e) {
+        console.error('[SYNC] Deletion failed:', e);
+        throw e;
+      }
     };
 
     return this._enqueue(runDelete);
@@ -349,6 +380,9 @@ const Storage = {
 
       // Handle anonymous migration if needed
       await this._runMigration({ user }, key);
+
+      // Drain offline queue
+      await this._drainOfflineQueue();
     } catch (e) {
       console.error('[AUTH] syncOnLogin error:', e);
     }
@@ -390,6 +424,18 @@ const Storage = {
       await this._revalidateTasks(key);
     } else {
         localStorage.setItem(migrationFlag, 'true');
+    }
+  },
+
+  async _drainOfflineQueue() {
+    if (this._offlineQueue.length === 0) return;
+    console.log('[SYNC] Draining offline queue...', this._offlineQueue.length);
+    const queue = [...this._offlineQueue];
+    this._offlineQueue = [];
+    for (const fn of queue) {
+      try { await fn(); } catch (e) {
+        console.error('[SYNC] Failed to process queued task:', e);
+      }
     }
   },
 
