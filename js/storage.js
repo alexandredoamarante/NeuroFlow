@@ -27,6 +27,7 @@ const Storage = {
   // Sync lifecycle state
   _hasCompletedInitialSync: false,
   _isHydrating: false,
+  _isTransitioning: false,
   _deviceId: null,
   _workspaceId: null,
   _pendingRealtimeUpdates: [],
@@ -109,6 +110,7 @@ const Storage = {
 
   async resetWorkspaceLifecycle() {
     console.log('[WORKSPACE] [RESET] Resetting all lifecycle state...');
+    this._isTransitioning = true;
 
     // 1. Destroy old realtime
     if (this._realtimeChannel) {
@@ -174,6 +176,7 @@ const Storage = {
       replaceLocalState: options.replaceLocalState
     });
 
+    this._isTransitioning = false;
     window.dispatchEvent(new CustomEvent('workspaceChanged', { detail: { workspaceId: id } }));
   },
 
@@ -330,15 +333,21 @@ const Storage = {
             // Or tasks that were deleted remotely
             localTasks.forEach(localTask => {
               if (!remoteTasksMap.has(String(localTask.id))) {
-                // Is it very new? (Created in last 30 seconds)
-                const isVeryNew = (Date.now() - (localTask.version || 0)) < 30000;
-                if (isVeryNew) {
-                  console.log(`[HYDRATION] [KEEP] Keeping local-only task (likely pending sync): ${localTask.id}`);
-                  mergedTasks.push(localTask);
-                  // hasChanges = false; // Already local
+                // If we haven't completed initial sync yet, we should be VERY careful about deleting local data.
+                // It might be that the remote fetch failed or returned partial data.
+                if (!this._hasCompletedInitialSync) {
+                   console.log(`[HYDRATION] [KEEP] Preserving local-only task during initial sync: ${localTask.id}`);
+                   mergedTasks.push(localTask);
                 } else {
-                  console.log(`[HYDRATION] [DELETE] Removing local task not found in cloud: ${localTask.id}`);
-                  hasChanges = true;
+                  // Is it very new? (Created in last 30 seconds)
+                  const isVeryNew = (Date.now() - (localTask.version || 0)) < 30000;
+                  if (isVeryNew) {
+                    console.log(`[HYDRATION] [KEEP] Keeping local-only task (likely pending sync): ${localTask.id}`);
+                    mergedTasks.push(localTask);
+                  } else {
+                    console.log(`[HYDRATION] [DELETE] Removing local task not found in cloud: ${localTask.id}`);
+                    hasChanges = true;
+                  }
                 }
               }
             });
@@ -413,7 +422,12 @@ const Storage = {
   },
 
   async saveTask(task) {
+    if (this._isTransitioning) {
+      console.warn('[PERSISTENCE] [SAVE] Skipping save: Workspace is transitioning.');
+      return;
+    }
     const key = await this.getTasksKey();
+    const workspaceIdAtTimeOfSave = this.getWorkspaceId();
 
     // Attach version for conflict resolution
     // Ensure BIGINT compatible timestamp
@@ -436,7 +450,13 @@ const Storage = {
 
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
     const runUpsert = async () => {
-      const workspaceId = this.getWorkspaceId();
+      // Use the workspace ID that was active when saveTask was CALLED
+      const workspaceId = workspaceIdAtTimeOfSave;
+
+      // Safety: If the current workspace has changed since the task was enqueued,
+      // we must be VERY careful. However, since we captured workspaceIdAtTimeOfSave,
+      // this specific upsert will still target the "correct" workspace it was meant for.
+
       console.log(`[PERSISTENCE] [INSERT/UPSERT] Syncing task: ${task.id} to workspace: ${workspaceId}`);
 
       const payload = {
@@ -470,7 +490,12 @@ const Storage = {
   },
 
   async deleteTask(id) {
+    if (this._isTransitioning) {
+      console.warn('[PERSISTENCE] [DELETE] Skipping delete: Workspace is transitioning.');
+      return;
+    }
     const key = await this.getTasksKey();
+    const workspaceIdAtTimeOfDelete = this.getWorkspaceId();
 
     // 1. OPTIMISTIC DELETE: Local cache immediately
     const state = this._getLocalState(key);
@@ -482,7 +507,7 @@ const Storage = {
 
     // 3. BACKGROUND SYNC
     const runDelete = async () => {
-      const workspaceId = this.getWorkspaceId();
+      const workspaceId = workspaceIdAtTimeOfDelete;
       const { data, error } = await this.supabase
         .from('tasks')
         .delete()
