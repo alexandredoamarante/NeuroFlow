@@ -31,6 +31,7 @@ const Storage = {
   _hasCompletedInitialSync: false,
   _isHydrating: false,
   _deviceId: null,
+  _workspaceId: null,
   _pendingRealtimeUpdates: [],
   _currentVersion: 0,
   _lastUpdatedAt: null,
@@ -69,6 +70,50 @@ const Storage = {
     }
     this._deviceId = id;
     return id;
+  },
+
+  generateWorkspaceKey() {
+    const words = [
+      'swift', 'silent', 'bright', 'dark', 'cool', 'warm', 'fast', 'slow',
+      'river', 'forest', 'peak', 'valley', 'ocean', 'plain', 'cloud', 'mist',
+      'neon', 'glass', 'echo', 'flux', 'node', 'link', 'pulse', 'spark',
+      'bold', 'calm', 'vivid', 'wild', 'pure', 'kind', 'brave', 'just'
+    ];
+    const w1 = words[Math.floor(Math.random() * words.length)];
+    const w2 = words[Math.floor(Math.random() * words.length)];
+    const num = Math.floor(Math.random() * 9000) + 1000;
+    return `${w1}-${w2}-${num}`;
+  },
+
+  getWorkspaceId() {
+    if (this._workspaceId) return this._workspaceId;
+    let id = localStorage.getItem('neuroaark_workspace_id');
+    if (!id) {
+      id = this.generateWorkspaceKey();
+      localStorage.setItem('neuroaark_workspace_id', id);
+    }
+    this._workspaceId = id;
+    return id;
+  },
+
+  async setWorkspaceId(id) {
+    if (!id) return;
+    this._workspaceId = id;
+    localStorage.setItem('neuroaark_workspace_id', id);
+
+    // Reset sync state for new workspace
+    this._hasCompletedInitialSync = false;
+    const key = await this.getTasksKey();
+
+    // Clear old realtime
+    if (this._realtimeChannel) {
+      await this.supabase.removeChannel(this._realtimeChannel);
+      this._realtimeChannel = null;
+    }
+
+    // Trigger immediate hydration and realtime init
+    await this.initRealtime(id);
+    await this._revalidateTasks(key);
   },
 
   async getSession() {
@@ -111,9 +156,8 @@ const Storage = {
   },
 
   async getTasksKey() {
-    const session = await this.getSession();
-    if (session && session.user) return `neuroaark_tasks_user_${session.user.id}`;
-    return 'neuroaark_tasks_anonymous';
+    const workspaceId = this.getWorkspaceId();
+    return `neuroaark_tasks_ws_${workspaceId}`;
   },
 
   _getLocalState(key) {
@@ -138,10 +182,9 @@ const Storage = {
   },
 
   async getTasks() {
-    const session = await this.getSession();
     const key = await this.getTasksKey();
 
-    if (session && !this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
+    if (!this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
       this._revalidateTasks(key);
     }
     const state = this._getLocalState(key);
@@ -149,10 +192,9 @@ const Storage = {
   },
 
   async getTask(id) {
-    const session = await this.getSession();
     const key = await this.getTasksKey();
 
-    if (session && !this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
+    if (!this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
       this._revalidateTasks(key);
     }
     const state = this._getLocalState(key);
@@ -165,15 +207,21 @@ const Storage = {
 
     this._revalidationPromises[key] = (async () => {
       try {
-        const user = await this.requireUser();
-        if (!user) return this._getLocalState(key).nodes;
+        const workspaceId = this.getWorkspaceId();
+
+        // Ensure realtime is active
+        if (!this._realtimeChannel && !this._isSubscribing) {
+          this.initRealtime(workspaceId);
+        }
+
+        const user = await this.requireUser(); // Optional for compatibility
 
         const { data, error } = await this.supabase
           .from('tasks')
           .select('*')
-          .eq('user_id', user.id);
+          .eq('workspace_id', workspaceId);
 
-        this._logNetwork('FETCH_ALL_TASKS', { userId: user.id }, data, error);
+        this._logNetwork('FETCH_ALL_TASKS', { workspaceId }, data, error);
 
         if (error) {
           console.error('[HYDRATE] Supabase fetch error:', error.message);
@@ -191,7 +239,7 @@ const Storage = {
           // Legacy mode: overwrite local with canonical if it exists
           localTasks = remoteTasks;
           hasChanges = true;
-          this._migrateLegacyData(user, legacyState);
+          this._migrateLegacyData(user, workspaceId, legacyState);
         } else {
           // Per-task mode: surgical merge based on version
           dataArray.filter(r => r.local_id !== 'canonical_state').forEach(remoteRow => {
@@ -237,23 +285,24 @@ const Storage = {
     return this._revalidationPromises[key];
   },
 
-  async _migrateLegacyData(user, legacyState) {
+  async _migrateLegacyData(user, workspaceId, legacyState) {
     const tasks = legacyState.nodes || [];
 
     for (const task of tasks) {
       const payload = {
-        user_id: user.id,
+        user_id: user ? user.id : null,
+        workspace_id: workspaceId,
         local_id: String(task.id),
         nodes: task,
         version: 1,
         device_id: this.getDeviceId()
       };
-      const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'user_id,local_id' });
+      const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'workspace_id,local_id' });
       this._logNetwork('SAVE_TASK_UPSERT', payload, data, error);
     }
 
-    const { data: delData, error: delError } = await this.supabase.from('tasks').delete().match({ user_id: user.id, local_id: 'canonical_state' });
-    this._logNetwork('MIGRATION_DELETE_LEGACY', { user_id: user.id }, delData, delError);
+    const { data: delData, error: delError } = await this.supabase.from('tasks').delete().match({ workspace_id: workspaceId, local_id: 'canonical_state' });
+    this._logNetwork('MIGRATION_DELETE_LEGACY', { workspaceId }, delData, delError);
   },
 
   async saveTask(task) {
@@ -277,18 +326,19 @@ const Storage = {
 
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
     const runUpsert = async () => {
-      const user = await this.requireUser();
-      if (!user) return;
+      const workspaceId = this.getWorkspaceId();
+      const user = await this.requireUser(); // Optional for compatibility
 
       const payload = {
-        user_id: user.id,
+        user_id: user ? user.id : null,
+        workspace_id: workspaceId,
         local_id: String(task.id),
         nodes: JSON.parse(JSON.stringify(task)),
         version: task.version,
         device_id: this.getDeviceId()
       };
 
-      const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'user_id,local_id' }).select();
+      const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'workspace_id,local_id' }).select();
       this._logNetwork('SAVE_TASK_UPSERT', { ...payload }, data, error);
 
       if (error) {
@@ -317,11 +367,9 @@ const Storage = {
 
     // 3. BACKGROUND SYNC
     const runDelete = async () => {
-      const user = await this.requireUser();
-      if (!user) return;
-
-      const { data, error } = await this.supabase.from('tasks').delete().match({ user_id: user.id, local_id: id });
-      this._logNetwork('DELETE_TASK', { local_id: id, user_id: user.id }, data, error);
+      const workspaceId = this.getWorkspaceId();
+      const { data, error } = await this.supabase.from('tasks').delete().match({ workspace_id: workspaceId, local_id: id });
+      this._logNetwork('DELETE_TASK', { local_id: id, workspaceId }, data, error);
 
       if (error) {
         console.error('[SYNC] Supabase deletion failed:', error);
@@ -336,29 +384,30 @@ const Storage = {
   },
 
   async syncOnLogin() {
+    // Legacy support, mostly redundant now
     try {
       const { data: { user } } = await this.supabase.auth.getUser();
-      if (!user) return;
-
+      const workspaceId = this.getWorkspaceId();
       const key = await this.getTasksKey();
-      await this.initRealtime(user.id);
 
-      // FORCE CLOUD OVERRIDE ON LOGIN
+      await this.initRealtime(workspaceId);
       this._hasCompletedInitialSync = false;
       await this._revalidateTasks(key);
 
-      // Handle anonymous migration if needed
-      await this._runMigration({ user }, key);
+      if (user) {
+        await this._runMigration({ user }, key);
+      }
     } catch (e) {
       console.error('[AUTH] syncOnLogin error:', e);
     }
   },
 
   async _runMigration(session, key) {
-    const migrationFlag = `neuroaark_migrated_v4_${session.user.id}`;
+    // Migrates old anonymous data to the current workspace
+    const workspaceId = this.getWorkspaceId();
+    const migrationFlag = `neuroaark_ws_migrated_${workspaceId}`;
     if (localStorage.getItem(migrationFlag) === 'true') return;
 
-    // Check anonymous local state
     const anonRaw = localStorage.getItem('neuroaark_tasks_anonymous');
     if (!anonRaw) {
         localStorage.setItem(migrationFlag, 'true');
@@ -372,17 +421,18 @@ const Storage = {
     } catch(e) {}
 
     if (anonTasks.length > 0) {
-      this._hasCompletedInitialSync = true; // Allow write during migration
+      this._hasCompletedInitialSync = true;
 
       for (const task of anonTasks) {
         const payload = {
-          user_id: session.user.id,
+          user_id: session?.user?.id || null,
+          workspace_id: workspaceId,
           local_id: String(task.id),
           nodes: task,
           version: Date.now(),
           device_id: this.getDeviceId()
         };
-        const { error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'user_id,local_id' });
+        const { error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'workspace_id,local_id' });
         if (error) console.error('[MIGRATE] Error migrating task:', task.id, error);
       }
       localStorage.setItem(migrationFlag, 'true');
@@ -412,15 +462,15 @@ const Storage = {
     console.log('[AUTH] Logout complete.');
   },
 
-  async initRealtime(userId) {
+  async initRealtime(workspaceId) {
     if (this._isSubscribing) return;
     if (this._realtimeChannel) {
       try { await this.supabase.removeChannel(this._realtimeChannel); } catch(e){}
     }
     this._isSubscribing = true;
     this._realtimeChannel = this.supabase
-      .channel(`public:tasks:user_id=eq.${userId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `user_id=eq.${userId}` },
+      .channel(`public:tasks:workspace_id=eq.${workspaceId}`)
+      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${workspaceId}` },
         payload => this._handleRealtimePayload(payload))
       .subscribe(() => { this._isSubscribing = false; });
   },
