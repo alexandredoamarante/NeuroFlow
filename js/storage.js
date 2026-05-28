@@ -96,24 +96,80 @@ const Storage = {
     return id;
   },
 
-  async setWorkspaceId(id) {
+  async checkWorkspaceExists(id) {
+    console.log(`[WORKSPACE] Checking if workspace exists: ${id}`);
+    const { count, error } = await this.supabase
+      .from('tasks')
+      .select('*', { count: 'exact', head: true })
+      .eq('workspace_id', id);
+
+    if (error) {
+      console.error('[WORKSPACE] Error checking workspace existence:', error);
+      return false;
+    }
+    return count > 0;
+  },
+
+  async resetWorkspaceLifecycle() {
+    console.log('[WORKSPACE] Resetting lifecycle...');
+
+    // 1. Destroy old realtime
+    if (this._realtimeChannel) {
+      console.log('[REALTIME] Removing old channel:', this._realtimeChannel.topic);
+      try {
+        await this.supabase.removeChannel(this._realtimeChannel);
+      } catch (e) {
+        console.error('[REALTIME] Error removing channel:', e);
+      }
+      this._realtimeChannel = null;
+    }
+    this._isSubscribing = false;
+
+    // 2. Clear timers and debounces
+    if (this._realtimeDebounce) clearTimeout(this._realtimeDebounce);
+    for (const id in this._debounceTimers) clearTimeout(this._debounceTimers[id]);
+    this._debounceTimers = {};
+
+    // 3. Reset sync/hydration state
+    this._hasCompletedInitialSync = false;
+    this._isHydrating = false;
+    this._revalidationPromises = {};
+    this._pendingRealtimeUpdates = [];
+    this._syncQueue = Promise.resolve();
+    this._currentVersion = 0;
+    this._lastUpdatedAt = null;
+  },
+
+  async setWorkspaceId(id, options = {}) {
     if (!id) return;
+    console.log(`[WORKSPACE] Switching to workspace: ${id}`, options);
+
+    await this.resetWorkspaceLifecycle();
+
     this._workspaceId = id;
     localStorage.setItem('neuroaark_workspace_id', id);
 
-    // Reset sync state for new workspace
-    this._hasCompletedInitialSync = false;
     const key = await this.getTasksKey();
 
-    // Clear old realtime
-    if (this._realtimeChannel) {
-      await this.supabase.removeChannel(this._realtimeChannel);
-      this._realtimeChannel = null;
+    if (options.replaceLocalState) {
+      console.log('[WORKSPACE] Clearing local state for new workspace');
+      localStorage.removeItem(key);
     }
 
-    // Trigger immediate hydration and realtime init
+    // Trigger immediate hydration with full replacement if requested
     await this.initRealtime(id);
-    await this._revalidateTasks(key);
+    await this._revalidateTasks(key, {
+      forceRemote: true,
+      replaceLocalState: options.replaceLocalState
+    });
+
+    window.dispatchEvent(new CustomEvent('workspaceChanged', { detail: { workspaceId: id } }));
+  },
+
+  async leaveWorkspace() {
+    console.log('[WORKSPACE] Leaving workspace...');
+    const newKey = this.generateWorkspaceKey();
+    await this.setWorkspaceId(newKey, { replaceLocalState: true });
   },
 
   async getSession() {
@@ -202,19 +258,18 @@ const Storage = {
     return tasks.find(t => t.id === id);
   },
 
-  async _revalidateTasks(key) {
+  async _revalidateTasks(key, options = {}) {
     if (this._revalidationPromises[key]) return this._revalidationPromises[key];
 
     this._revalidationPromises[key] = (async () => {
       try {
         const workspaceId = this.getWorkspaceId();
+        console.log(`[HYDRATION] Revalidating workspace: ${workspaceId}`, options);
 
         // Ensure realtime is active
         if (!this._realtimeChannel && !this._isSubscribing) {
           this.initRealtime(workspaceId);
         }
-
-        const user = await this.requireUser(); // Optional for compatibility
 
         const { data, error } = await this.supabase
           .from('tasks')
@@ -229,36 +284,40 @@ const Storage = {
         }
 
         const dataArray = Array.isArray(data) ? data : (data ? [data] : []);
-        const localState = this._getLocalState(key);
+        const localState = options.replaceLocalState ? { nodes: [] } : this._getLocalState(key);
         let localTasks = [...(localState.nodes || [])];
-        let hasChanges = false;
+        let hasChanges = options.replaceLocalState;
 
         let legacyState = dataArray.find(r => r.local_id === 'canonical_state');
         if (legacyState) {
+          console.log('[HYDRATION] Found legacy canonical_state, migrating...');
           const remoteTasks = legacyState.nodes || [];
-          // Legacy mode: overwrite local with canonical if it exists
           localTasks = remoteTasks;
           hasChanges = true;
-          this._migrateLegacyData(user, workspaceId, legacyState);
+          this._migrateLegacyData(workspaceId, legacyState);
         } else {
-          // Per-task mode: surgical merge based on version
-          dataArray.filter(r => r.local_id !== 'canonical_state').forEach(remoteRow => {
-            const remoteTask = remoteRow.nodes;
-            const remoteVersion = remoteRow.version || 0;
-            const localIdx = localTasks.findIndex(t => String(t.id) === String(remoteRow.local_id));
+          // Per-task mode
+          if (options.replaceLocalState) {
+             localTasks = dataArray.filter(r => r.local_id !== 'canonical_state').map(r => r.nodes);
+          } else {
+            dataArray.filter(r => r.local_id !== 'canonical_state').forEach(remoteRow => {
+              const remoteTask = remoteRow.nodes;
+              const remoteVersion = remoteRow.version || 0;
+              const localIdx = localTasks.findIndex(t => String(t.id) === String(remoteRow.local_id));
 
-            if (localIdx === -1) {
-              localTasks.push(remoteTask);
-              hasChanges = true;
-            } else {
-              const localTask = localTasks[localIdx];
-              const localVersion = localTask.version || 0;
-              if (remoteVersion > localVersion) {
-                localTasks[localIdx] = remoteTask;
+              if (localIdx === -1) {
+                localTasks.push(remoteTask);
                 hasChanges = true;
+              } else {
+                const localTask = localTasks[localIdx];
+                const localVersion = localTask.version || 0;
+                if (remoteVersion > localVersion) {
+                  localTasks[localIdx] = remoteTask;
+                  hasChanges = true;
+                }
               }
-            }
-          });
+            });
+          }
         }
 
         if (hasChanges || !this._hasCompletedInitialSync) {
@@ -285,12 +344,11 @@ const Storage = {
     return this._revalidationPromises[key];
   },
 
-  async _migrateLegacyData(user, workspaceId, legacyState) {
+  async _migrateLegacyData(workspaceId, legacyState) {
     const tasks = legacyState.nodes || [];
 
     for (const task of tasks) {
       const payload = {
-        user_id: user ? user.id : null,
         workspace_id: workspaceId,
         local_id: String(task.id),
         nodes: task,
@@ -327,10 +385,9 @@ const Storage = {
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
     const runUpsert = async () => {
       const workspaceId = this.getWorkspaceId();
-      const user = await this.requireUser(); // Optional for compatibility
+      console.log(`[SYNC] Saving task: ${task.id} to workspace: ${workspaceId}`);
 
       const payload = {
-        user_id: user ? user.id : null,
         workspace_id: workspaceId,
         local_id: String(task.id),
         nodes: JSON.parse(JSON.stringify(task)),
@@ -464,25 +521,43 @@ const Storage = {
 
   async initRealtime(workspaceId) {
     if (this._isSubscribing) return;
+
     if (this._realtimeChannel) {
+      console.log('[REALTIME] Cleaning up existing channel before re-subscribing');
       try { await this.supabase.removeChannel(this._realtimeChannel); } catch(e){}
+      this._realtimeChannel = null;
     }
+
+    console.log(`[REALTIME] Subscribing to workspace: ${workspaceId}`);
     this._isSubscribing = true;
+
+    const channelName = `public:tasks:workspace_id=eq.${workspaceId}`;
     this._realtimeChannel = this.supabase
-      .channel(`public:tasks:workspace_id=eq.${workspaceId}`)
-      .on('postgres_changes', { event: '*', schema: 'public', table: 'tasks', filter: `workspace_id=eq.${workspaceId}` },
-        payload => this._handleRealtimePayload(payload))
-      .subscribe(() => { this._isSubscribing = false; });
+      .channel(channelName)
+      .on('postgres_changes', {
+        event: '*',
+        schema: 'public',
+        table: 'tasks',
+        filter: `workspace_id=eq.${workspaceId}`
+      },
+      payload => this._handleRealtimePayload(payload))
+      .subscribe((status) => {
+        console.log(`[REALTIME] Subscription status for ${workspaceId}:`, status);
+        this._isSubscribing = false;
+      });
   },
 
   async _handleRealtimePayload(payload) {
     if (payload.new && payload.new.device_id === this.getDeviceId()) return;
     if (payload.new && payload.new.local_id === 'canonical_state') return;
 
+    console.log('[REALTIME] Payload received:', payload.eventType, payload.new?.local_id);
+
     // Debounce revalidation to avoid floods and hydration loops
     if (this._realtimeDebounce) clearTimeout(this._realtimeDebounce);
 
     this._realtimeDebounce = setTimeout(async () => {
+      console.log('[REALTIME] Triggering revalidation after debounce');
       const key = await this.getTasksKey();
       this._enqueue(() => this._revalidateTasks(key));
     }, 300);
