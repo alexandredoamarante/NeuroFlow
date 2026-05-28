@@ -208,7 +208,8 @@ const Storage = {
 
         // Process results
         let remoteTasks = [];
-        let legacyState = data.find(r => r.local_id === 'canonical_state');
+        const dataArray = Array.isArray(data) ? data : (data ? [data] : []);
+        let legacyState = dataArray.find(r => r.local_id === 'canonical_state');
 
         if (legacyState) {
           console.log('[HYDRATE] [TRACE] Legacy canonical_state found. Unpacking...');
@@ -217,7 +218,7 @@ const Storage = {
           this._migrateLegacyData(user, legacyState);
         } else {
           // Per-task model: each row is a task (except for reserved local_ids)
-          remoteTasks = data
+          remoteTasks = dataArray
             .filter(r => r.local_id !== 'canonical_state')
             .map(r => r.nodes); // In per-task model, 'nodes' column stores the whole task object
         }
@@ -290,50 +291,49 @@ const Storage = {
     // We explicitly use getUser() to ensure a fresh, valid user ID for RLS compliance.
     const runUpsert = async () => {
       console.log('[SAVE] [TRACE] runUpsert starting...');
-      try {
-        // Use cached session first if available to speed up
-        let user = this._session?.user;
-        if (!user) {
-            const { data: authData, error: authError } = await this.supabase.auth.getUser();
-            console.log('[SAVE] [TRACE] getUser result:', authData?.user?.id, authError);
-            user = authData?.user;
-        }
 
-        if (!user) {
-          console.warn('[SAVE] [TRACE] Cloud persistence skipped: No authenticated user.');
-          return;
-        }
-        const userId = user.id;
-
-        if (!userId || userId === 'undefined') {
-          console.error('[SAVE] [ERROR] Resolved userId is invalid:', userId);
-          return;
-        }
-
-        const localId = String(task.id);
-        const deviceId = this.getDeviceId();
-
-        const payload = {
-          user_id: userId,
-          local_id: localId,
-          nodes: JSON.parse(JSON.stringify(task)), // Whole task object stored in JSONB 'nodes' column
-          version: Date.now(),
-          device_id: deviceId
-        };
-
-        console.log('[SAVE] [TRACE] Triggering Supabase UPSERT for User:', userId, 'LocalID:', localId);
-        const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'user_id,local_id' }).select();
-
-        this._logNetwork('SAVE_TASK_UPSERT', { ...payload }, data, error);
-        if (error) console.error('[SAVE] [ERROR] Supabase persistence failed:', error.message);
-        else console.log('[SAVE] [SUCCESS] Task persisted in cloud:', task.id);
-      } catch (e) {
-        console.error('[SAVE] [TRACE] Unexpected save error:', e);
+      // Use cached session first if available to speed up
+      let user = this._session?.user;
+      if (!user) {
+          const { data: authData, error: authError } = await this.supabase.auth.getUser();
+          console.log('[SAVE] [TRACE] getUser result:', authData?.user?.id, authError);
+          user = authData?.user;
       }
+
+      if (!user) {
+        console.warn('[SAVE] [TRACE] Cloud persistence skipped: No authenticated user.');
+        return;
+      }
+      const userId = user.id;
+
+      if (!userId || userId === 'undefined') {
+        console.error('[SAVE] [ERROR] Resolved userId is invalid:', userId);
+        return;
+      }
+
+      const localId = String(task.id);
+      const deviceId = this.getDeviceId();
+
+      const payload = {
+        user_id: userId,
+        local_id: localId,
+        nodes: JSON.parse(JSON.stringify(task)), // Whole task object stored in JSONB 'nodes' column
+        version: Date.now(),
+        device_id: deviceId
+      };
+
+      console.log('[SAVE] [TRACE] Triggering Supabase UPSERT for User:', userId, 'LocalID:', localId);
+      const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'user_id,local_id' }).select();
+
+      this._logNetwork('SAVE_TASK_UPSERT', { ...payload }, data, error);
+      if (error) {
+        console.error('[SYNC] Supabase upsert failed:', error);
+        throw error;
+      }
+      console.log('[SAVE] [SUCCESS] Task persisted in cloud:', task.id);
     };
 
-    runUpsert();
-    return Promise.resolve();
+    return runUpsert();
   },
 
   async deleteTask(id) {
