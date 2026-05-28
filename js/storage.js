@@ -155,10 +155,11 @@ const Storage = {
     const key = await this.getTasksKey();
 
     if (session) {
-      // OPTIMISTIC: Trigger background sync if not hydrated, but return local cache immediately.
-      if (!this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
-        console.log('[HYDRATE] [TRACE] getTasks: Triggering background hydration.');
-        this._revalidateTasks(key);
+      // BLOCKING HYDRATION: For logged-in users, we must ensure we have the latest cloud state
+      // before rendering to avoid "missing data" or "isolated device" issues.
+      if (!this._hasCompletedInitialSync) {
+        console.log('[HYDRATE] [TRACE] getTasks: Awaiting initial hydration.');
+        await this._revalidateTasks(key);
       }
       const state = this._getLocalState(key);
       return state.nodes || [];
@@ -173,8 +174,9 @@ const Storage = {
     const session = await this.getSession();
     const key = await this.getTasksKey();
 
-    if (session && !this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
-      this._revalidateTasks(key);
+    if (session && !this._hasCompletedInitialSync) {
+      console.log('[HYDRATE] [TRACE] getTask: Awaiting initial hydration.');
+      await this._revalidateTasks(key);
     }
 
     const state = this._getLocalState(key);
@@ -189,9 +191,22 @@ const Storage = {
     if (this._revalidationPromises[key]) return this._revalidationPromises[key];
 
     this._revalidationPromises[key] = (async () => {
+      this._isHydrating = true;
       try {
-        const { data: { user } } = await this.supabase.auth.getUser();
-        if (!user) return this._getLocalState(key).nodes;
+        let user = this._session?.user;
+        if (!user) {
+          try {
+            const { data: authData } = await this.supabase.auth.getUser();
+            user = authData?.user;
+          } catch(e) {
+            console.warn('[HYDRATE] auth.getUser failed:', e.message);
+          }
+        }
+
+        if (!user) {
+          this._isHydrating = false;
+          return this._getLocalState(key).nodes;
+        }
 
         console.log('[HYDRATE] [TRACE] Fetching all tasks for user:', user.id);
         const { data, error } = await this.supabase
@@ -203,43 +218,59 @@ const Storage = {
 
         if (error) {
           console.error('[HYDRATE] [TRACE] Supabase fetch error:', error.message);
+          this._isHydrating = false;
           return this._getLocalState(key).nodes;
         }
 
-        // Process results
+        // 1. Unpack remote tasks
         let remoteTasks = [];
-        let legacyState = data.find(r => r.local_id === 'canonical_state');
+        const dataArray = Array.isArray(data) ? data : (data ? [data] : []);
+        let legacyState = dataArray.find(r => r.local_id === 'canonical_state');
 
         if (legacyState) {
           console.log('[HYDRATE] [TRACE] Legacy canonical_state found. Unpacking...');
           remoteTasks = legacyState.nodes || [];
-          // Trigger background migration of legacy data
-          this._migrateLegacyData(user, legacyState);
+          // Trigger migration of legacy data - await it for reliability during first sync
+          await this._migrateLegacyData(user, legacyState);
         } else {
-          // Per-task model: each row is a task (except for reserved local_ids)
-          remoteTasks = data
+          remoteTasks = dataArray
             .filter(r => r.local_id !== 'canonical_state')
-            .map(r => r.nodes); // In per-task model, 'nodes' column stores the whole task object
+            .map(r => r.nodes);
         }
 
-        // AUTHORITATIVE SYNC: For logged in users, Cloud is the source of truth.
-        // We replace local state with cloud state.
+        // 2. AUTHORITATIVE HYDRATION: Cloud is the source of truth.
+        // We replace local state with cloud state to ensure device parity.
+        // This resolves the "isolated data" issue where different devices maintained separate sets.
+        const mergedTasks = [...remoteTasks];
+
+        // 3. Trigger migration of anonymous tasks if this is the first login
+        const migrationFlag = `neuroaark_migrated_v4_${user.id}`;
+        if (localStorage.getItem(migrationFlag) !== 'true') {
+            const anonTasks = await this._runMigration({ user }, key);
+            anonTasks.forEach(anonTask => {
+                if (!mergedTasks.find(t => t.id === anonTask.id)) {
+                    mergedTasks.push(anonTask);
+                }
+            });
+        }
+
         const newState = {
-          nodes: remoteTasks,
-          version: Date.now(), // Simplified versioning for per-task
+          nodes: mergedTasks,
+          version: Date.now(),
           updated_at: new Date().toISOString(),
           device_id: this.getDeviceId()
         };
 
         this._setLocalState(key, newState);
         this._hasCompletedInitialSync = true;
-        window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: remoteTasks }));
+        window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: mergedTasks }));
 
-        return remoteTasks;
+        return mergedTasks;
       } catch (e) {
         console.error('[HYDRATE] [TRACE] Hydration exception:', e);
         return this._getLocalState(key).nodes;
       } finally {
+        this._isHydrating = false;
         setTimeout(() => { delete this._revalidationPromises[key]; }, 100);
       }
     })();
@@ -257,7 +288,7 @@ const Storage = {
     for (const task of tasks) {
       const payload = {
         user_id: user.id,
-        local_id: task.id,
+        local_id: String(task.id),
         nodes: task,
         version: 1,
         device_id: this.getDeviceId()
@@ -286,16 +317,14 @@ const Storage = {
 
     this._setLocalState(key, { ...state, nodes: tasks, updated_at: new Date().toISOString() });
 
-    // 2. Authoritative Supabase Insert (Non-blocking)
-    // We explicitly use getUser() to ensure a fresh, valid user ID for RLS compliance.
-    const runUpsert = async () => {
+    // 2. Authoritative Supabase Insert (Queued & Serial)
+    return this._enqueue(async () => {
+      this._isSyncing = true;
       console.log('[SAVE] [TRACE] runUpsert starting...');
       try {
-        // Use cached session first if available to speed up
         let user = this._session?.user;
         if (!user) {
-            const { data: authData, error: authError } = await this.supabase.auth.getUser();
-            console.log('[SAVE] [TRACE] getUser result:', authData?.user?.id, authError);
+            const { data: authData } = await this.supabase.auth.getUser();
             user = authData?.user;
         }
 
@@ -303,37 +332,25 @@ const Storage = {
           console.warn('[SAVE] [TRACE] Cloud persistence skipped: No authenticated user.');
           return;
         }
-        const userId = user.id;
-
-        if (!userId || userId === 'undefined') {
-          console.error('[SAVE] [ERROR] Resolved userId is invalid:', userId);
-          return;
-        }
-
-        const localId = String(task.id);
-        const deviceId = this.getDeviceId();
 
         const payload = {
-          user_id: userId,
-          local_id: localId,
-          nodes: JSON.parse(JSON.stringify(task)), // Whole task object stored in JSONB 'nodes' column
+          user_id: user.id,
+          local_id: String(task.id),
+          nodes: JSON.parse(JSON.stringify(task)),
           version: Date.now(),
-          device_id: deviceId
+          device_id: this.getDeviceId()
         };
 
-        console.log('[SAVE] [TRACE] Triggering Supabase UPSERT for User:', userId, 'LocalID:', localId);
         const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'user_id,local_id' }).select();
-
         this._logNetwork('SAVE_TASK_UPSERT', { ...payload }, data, error);
-        if (error) console.error('[SAVE] [ERROR] Supabase persistence failed:', error.message);
-        else console.log('[SAVE] [SUCCESS] Task persisted in cloud:', task.id);
+        if (error) throw error;
+        console.log('[SAVE] [SUCCESS] Task persisted in cloud:', task.id);
       } catch (e) {
-        console.error('[SAVE] [TRACE] Unexpected save error:', e);
+        console.error('[SAVE] [ERROR] Supabase persistence failed:', e.message);
+      } finally {
+        this._isSyncing = false;
       }
-    };
-
-    runUpsert();
-    return Promise.resolve();
+    });
   },
 
   async deleteTask(id) {
@@ -345,19 +362,27 @@ const Storage = {
     const filtered = (state.nodes || []).filter(t => t.id !== id);
     this._setLocalState(key, { ...state, nodes: filtered, updated_at: new Date().toISOString() });
 
-    // 2. Supabase Delete (Non-blocking)
-    this.supabase.auth.getUser().then(async ({ data: { user } }) => {
-      if (!user) return;
+    // 2. Supabase Delete (Queued & Serial)
+    return this._enqueue(async () => {
+      this._isSyncing = true;
+      try {
+        let user = this._session?.user;
+        if (!user) {
+            const { data: authData } = await this.supabase.auth.getUser();
+            user = authData?.user;
+        }
+        if (!user) return;
 
-      console.log('[SAVE] [TRACE] Triggering Supabase DELETE for User:', user.id, 'LocalID:', id);
-      const { data, error } = await this.supabase.from('tasks').delete().match({ user_id: user.id, local_id: id });
-
-      this._logNetwork('DELETE_TASK', { local_id: id, user_id: user.id }, data, error);
-      if (error) console.error('[SAVE] [ERROR] Supabase deletion failed:', error.message);
-      else console.log('[SAVE] [SUCCESS] Task deleted from cloud:', id);
+        const { data, error } = await this.supabase.from('tasks').delete().match({ user_id: user.id, local_id: id });
+        this._logNetwork('DELETE_TASK', { local_id: id, user_id: user.id }, data, error);
+        if (error) throw error;
+        console.log('[SAVE] [SUCCESS] Task deleted from cloud:', id);
+      } catch (e) {
+          console.error('[SAVE] [ERROR] Supabase deletion failed:', e.message);
+      } finally {
+          this._isSyncing = false;
+      }
     });
-
-    return Promise.resolve();
   },
 
   async syncOnLogin() {
@@ -377,77 +402,48 @@ const Storage = {
   },
 
   async _runMigration(session, key) {
-    console.log('[MIGRATE] [TRACE] Checking for legacy tasks...');
+    console.log('[MIGRATE] [TRACE] Checking for anonymous/legacy tasks...');
     const migrationFlag = `neuroaark_migrated_v4_${session.user.id}`;
+    if (localStorage.getItem(migrationFlag) === 'true') return [];
 
-    // Check for legacy cloud tasks (pre-canonical model)
-    const migrationFetchResponse = await this.supabase
-      .from('tasks')
-      .select('*')
-      .eq('user_id', session.user.id)
-      .neq('local_id', 'canonical_state');
+    let tasksToMigrate = [];
 
-    const { data: legacyCloud, error: migrationError } = migrationFetchResponse;
-    this._logNetwork('MIGRATION_FETCH_LEGACY', { userId: session.user.id }, legacyCloud, migrationError);
-
-    let consolidated = [];
-    if (legacyCloud && legacyCloud.length > 0) {
-      console.log('[MIGRATE] Found legacy cloud tasks:', legacyCloud.length);
-      consolidated = legacyCloud.map(t => ({
-        id: t.local_id,
-        name: t.name || 'Tarefa',
-        desc: t.description || '',
-        color: t.color || '#60a5fa',
-        sessions: t.sessions || 0,
-        checklist: t.checklist || [],
-        nodes: t.nodes || []
-      }));
-    } else {
-      // Fallback to anonymous local state if this is the first login ever on this device
-      if (localStorage.getItem(migrationFlag) !== 'true') {
-        console.log('[MIGRATE] Checking anonymous localStorage.');
-        const anon = JSON.parse(localStorage.getItem('neuroaark_tasks_anonymous') || '[]');
-        if (anon.length > 0) consolidated = anon;
-      }
+    // 1. Check anonymous local state
+    const anonRaw = localStorage.getItem('neuroaark_tasks_anonymous');
+    if (anonRaw) {
+        try {
+            const parsed = JSON.parse(anonRaw);
+            const anonNodes = Array.isArray(parsed) ? parsed : (parsed.nodes || []);
+            if (anonNodes.length > 0) {
+                console.log('[MIGRATE] Found anonymous tasks to migrate:', anonNodes.length);
+                tasksToMigrate = anonNodes;
+            }
+        } catch(e) {}
     }
 
-    if (consolidated.length > 0) {
-      console.log('[MIGRATE] [TRACE] Consolidating', consolidated.length, 'tasks to cloud...');
-      this._hasCompletedInitialSync = true; // Unlock to allow migration write
+    // 2. Perform migration to per-task rows
+    if (tasksToMigrate.length > 0) {
+      console.log('[MIGRATE] [TRACE] Migrating', tasksToMigrate.length, 'tasks to cloud...');
 
-      const nextVersion = this._currentVersion + 1;
-      const payload = {
-        user_id: session.user.id,
-        local_id: 'canonical_state',
-        nodes: consolidated,
-        version: nextVersion,
-        device_id: this.getDeviceId(),
-        updated_at: new Date().toISOString()
-      };
-
-      console.log('[MIGRATE] [TRACE] Performing direct migration UPSERT...');
-      const migrateUpsert = await this.supabase
-        .from('tasks')
-        .upsert(payload, { onConflict: 'user_id,local_id' });
-
-      this._logNetwork('MIGRATION_UPSERT', payload, migrateUpsert.data, migrateUpsert.error);
-
-      if (!migrateUpsert.error) {
-          // Clean up legacy
-          await this.supabase.from('tasks').delete().match({ user_id: session.user.id }).neq('local_id', 'canonical_state');
-          localStorage.setItem(migrationFlag, 'true');
-          this._hasCompletedInitialSync = true;
-      } else {
-          console.error('[MIGRATE] [TRACE] Migration UPSERT failed. Sync remaining gated.');
-          this._hasCompletedInitialSync = false;
+      for (const task of tasksToMigrate) {
+          const payload = {
+              user_id: session.user.id,
+              local_id: String(task.id),
+              nodes: task,
+              version: Date.now(),
+              device_id: this.getDeviceId()
+          };
+          const { error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'user_id,local_id' });
+          if (error) console.error('[MIGRATE] Failed to migrate task:', task.id, error.message);
       }
-    } else {
-        localStorage.setItem(migrationFlag, 'true');
-        this._hasCompletedInitialSync = true;
+
+      // Clear anonymous state after migration
+      localStorage.removeItem('neuroaark_tasks_anonymous');
     }
 
-    window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: consolidated }));
-    return consolidated;
+    localStorage.setItem(migrationFlag, 'true');
+    console.log('[MIGRATE] [TRACE] Migration complete.');
+    return tasksToMigrate;
   },
 
   async clearSession() {
