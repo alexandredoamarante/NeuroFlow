@@ -27,10 +27,12 @@ const Auth = {
       this.openWorkspaceModal();
     });
 
-    // Ensure workspace sync starts
+    // Ensure workspace sync starts ONLY if enabled
     const wsId = Storage.getWorkspaceId();
-    console.log('[WORKSPACE] Initializing with ID:', wsId);
-    Storage.initRealtime(wsId);
+    console.log('[WORKSPACE] Initializing with ID:', wsId, 'Sync enabled:', Storage.isSyncEnabled());
+    if (Storage.isSyncEnabled()) {
+      Storage.initRealtime(wsId);
+    }
 
     // Initial UI update
     this.updateUI();
@@ -66,12 +68,13 @@ const Auth = {
 
       let proceed = false;
       if (exists) {
-        proceed = confirm(`Deseja entrar no workspace "${newKey}"?`);
+        proceed = confirm(`Deseja entrar no workspace "${newKey}"? A sincronização será ativada.`);
       } else {
-        proceed = confirm(`O workspace "${newKey}" não existe. Deseja criá-lo?`);
+        proceed = confirm(`O workspace "${newKey}" não existe. Deseja criá-lo e ativar a sincronização?`);
       }
 
       if (proceed) {
+        Storage.setSyncEnabled(true);
         await Storage.setWorkspaceId(newKey, { replaceLocalState: true });
         this.updateUI();
         if (workspaceModal) workspaceModal.style.display = 'none';
@@ -99,6 +102,34 @@ const Auth = {
   openWorkspaceModal() {
     if (!workspaceModal) return;
     workspaceKeyDisplay.textContent = Storage.getWorkspaceId();
+
+    // Add "Enable Sync" button if currently offline
+    let enableSyncContainer = workspaceModal.querySelector('#enableSyncContainer');
+    if (!Storage.isSyncEnabled()) {
+        if (!enableSyncContainer) {
+            enableSyncContainer = document.createElement('div');
+            enableSyncContainer.id = 'enableSyncContainer';
+            enableSyncContainer.style.marginTop = '1rem';
+            enableSyncContainer.innerHTML = `
+                <button class="lg-btn primary sm w-full" id="enableSyncBtn">Ativar Sincronização em Nuvem</button>
+                <p class="modal-text" style="font-size: 0.7rem; margin-top: 0.4rem; opacity: 0.7;">Isso enviará suas notas locais para a nuvem sob esta chave.</p>
+            `;
+            const displayBox = workspaceModal.querySelector('.workspace-display-box');
+            displayBox.after(enableSyncContainer);
+
+            document.getElementById('enableSyncBtn').addEventListener('click', async () => {
+                if (confirm('Deseja ativar a sincronização em nuvem para este workspace?')) {
+                    await Storage.setSyncEnabled(true);
+                    this.updateUI();
+                    window.location.reload();
+                }
+            });
+        }
+        enableSyncContainer.style.display = 'block';
+    } else {
+        if (enableSyncContainer) enableSyncContainer.style.display = 'none';
+    }
+
     workspaceModal.style.display = 'flex';
   },
 
@@ -107,9 +138,20 @@ const Auth = {
    */
   updateUI() {
     if (!authBtn || !authText) return;
-    authText.textContent = 'Sync';
+
+    const isSynced = Storage.isSyncEnabled();
+    authText.textContent = isSynced ? 'Synced' : 'Offline';
+
+    if (isSynced) {
+        authBtn.classList.add('primary');
+        authBtn.classList.remove('ghost');
+    } else {
+        authBtn.classList.remove('primary');
+        authBtn.classList.add('ghost');
+    }
+
     const wsId = Storage.getWorkspaceId();
-    authBtn.title = `Workspace: ${wsId}`;
+    authBtn.title = `Workspace: ${wsId} (${isSynced ? 'Sincronizado' : 'Local/Offline'})`;
   }
 };
 

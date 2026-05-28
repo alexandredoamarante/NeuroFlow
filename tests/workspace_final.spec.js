@@ -38,6 +38,7 @@ test.describe('Workspace Final Stabilization Tests', () => {
 
   test('TEST 1 & 2: Persistence and Refresh', async ({ page }) => {
     await page.goto(BASE_URL);
+    await page.evaluate(() => window.Storage.setSyncEnabled(true));
 
     // Wait for workspace to be generated
     const workspaceId = await page.evaluate(() => window.Storage.getWorkspaceId());
