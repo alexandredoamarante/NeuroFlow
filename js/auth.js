@@ -75,6 +75,7 @@ const Auth = {
         await Storage.setWorkspaceId(newKey, { replaceLocalState: true });
         this.updateUI();
         if (workspaceModal) workspaceModal.style.display = 'none';
+        // Reloading ensures all other modules (home.js, task.js) pick up the new workspace state
         window.location.reload();
       }
       joinWorkspaceBtn.disabled = false;
@@ -83,6 +84,7 @@ const Auth = {
     leaveWorkspaceBtn?.addEventListener('click', async () => {
       if (confirm('Tem certeza que deseja sair deste workspace? Você será movido para um novo workspace anônimo.')) {
         await Storage.leaveWorkspace();
+        this.updateUI();
         window.location.reload();
       }
     });

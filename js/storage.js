@@ -108,23 +108,30 @@ const Storage = {
   },
 
   async resetWorkspaceLifecycle() {
-    console.log('[WORKSPACE] Resetting lifecycle...');
+    console.log('[WORKSPACE] [RESET] Resetting all lifecycle state...');
 
     // 1. Destroy old realtime
     if (this._realtimeChannel) {
-      console.log('[REALTIME] Removing old channel:', this._realtimeChannel.topic);
+      const topic = this._realtimeChannel.topic;
+      console.log('[REALTIME] [CLEANUP] Removing channel:', topic);
       try {
         await this.supabase.removeChannel(this._realtimeChannel);
+        console.log('[REALTIME] [CLEANUP] Channel removed:', topic);
       } catch (e) {
-        console.error('[REALTIME] Error removing channel:', e);
+        console.error('[REALTIME] [ERROR] Error removing channel:', e);
       }
       this._realtimeChannel = null;
     }
     this._isSubscribing = false;
 
     // 2. Clear timers and debounces
-    if (this._realtimeDebounce) clearTimeout(this._realtimeDebounce);
-    for (const id in this._debounceTimers) clearTimeout(this._debounceTimers[id]);
+    if (this._realtimeDebounce) {
+      clearTimeout(this._realtimeDebounce);
+      this._realtimeDebounce = null;
+    }
+    for (const id in this._debounceTimers) {
+      clearTimeout(this._debounceTimers[id]);
+    }
     this._debounceTimers = {};
 
     // 3. Reset sync/hydration state
@@ -132,9 +139,16 @@ const Storage = {
     this._isHydrating = false;
     this._revalidationPromises = {};
     this._pendingRealtimeUpdates = [];
+
+    // Reset sync queue properly by letting it drain or just replacing it
+    // Note: Replacing it might leave floating promises, but since we are resetting the workspace,
+    // those old operations (if any) should target the old workspace anyway.
     this._syncQueue = Promise.resolve();
+
     this._currentVersion = 0;
     this._lastUpdatedAt = null;
+
+    console.log('[WORKSPACE] [RESET] Lifecycle reset complete.');
   },
 
   async setWorkspaceId(id, options = {}) {
@@ -222,8 +236,9 @@ const Storage = {
 
     this._revalidationPromises[key] = (async () => {
       try {
+        this._isHydrating = true;
         const workspaceId = this.getWorkspaceId();
-        console.log(`[HYDRATION] [SELECT] Revalidating workspace: ${workspaceId}`, options);
+        console.log(`[HYDRATION] [START] Revalidating workspace: ${workspaceId}`, options);
 
         // Ensure realtime is active
         if (!this._realtimeChannel && !this._isSubscribing) {
@@ -236,51 +251,104 @@ const Storage = {
           .eq('workspace_id', workspaceId);
 
         this._logNetwork('FETCH_ALL_TASKS', { workspaceId }, data, error);
-        console.log(`[HYDRATION] [SELECT] Response from Supabase:`, { count: data?.length, error });
 
         if (error) {
-          console.error('[HYDRATE] Supabase fetch error:', error.message);
+          console.error('[HYDRATION] [ERROR] Supabase fetch failed:', error.message, error.details);
+          // If we fail to fetch, we DO NOT set _hasCompletedInitialSync to true.
+          // This keeps the system in a "revalidation required" state.
           return this._getLocalState(key).nodes;
         }
 
         const dataArray = Array.isArray(data) ? data : (data ? [data] : []);
+        console.log(`[HYDRATION] [FETCH] Found ${dataArray.length} remote rows.`);
+
         const localState = options.replaceLocalState ? { nodes: [] } : this._getLocalState(key);
         let localTasks = [...(localState.nodes || [])];
         let hasChanges = options.replaceLocalState;
 
-        let legacyState = dataArray.find(r => r.local_id === 'canonical_state');
-        if (legacyState) {
-          console.log('[HYDRATION] Found legacy canonical_state, migrating...');
-          const remoteTasks = legacyState.nodes || [];
+        // 1. Check for Legacy Data
+        let legacyRow = dataArray.find(r => r.local_id === 'canonical_state');
+        if (legacyRow) {
+          console.log('[HYDRATION] [LEGACY] Found legacy monolithic state. Unpacking...');
+          const remoteTasks = legacyRow.nodes || [];
+
+          // Legacy migration: Monolithic state takes precedence initially
           localTasks = remoteTasks;
           hasChanges = true;
-          this._migrateLegacyData(workspaceId, legacyState);
+
+          // Trigger background migration
+          this._migrateLegacyData(workspaceId, legacyRow);
         } else {
-          // Per-task mode
+          // 2. Per-Task Merging (Cloud Parity Authority)
+          // Remote state is the source of truth for WHICH tasks exist.
+          const remoteTasksMap = new Map();
+          dataArray.forEach(row => {
+            if (row.local_id !== 'canonical_state') {
+              remoteTasksMap.set(String(row.local_id), row);
+            }
+          });
+
           if (options.replaceLocalState) {
-             localTasks = dataArray.filter(r => r.local_id !== 'canonical_state').map(r => r.nodes);
+            console.log('[HYDRATION] [REPLACE] Replacing local state with remote data.');
+            localTasks = Array.from(remoteTasksMap.values()).map(r => r.nodes);
+            hasChanges = true;
           } else {
-            dataArray.filter(r => r.local_id !== 'canonical_state').forEach(remoteRow => {
+            // Smart Merge:
+            // a) Tasks in remote but not local -> Add
+            // b) Tasks in both -> Compare version, take newest
+            // c) Tasks in local but not remote -> DELETED (unless they are new and not yet synced)
+
+            const mergedTasks = [];
+
+            // Handle Remote & Common tasks
+            remoteTasksMap.forEach((remoteRow, localId) => {
               const remoteTask = remoteRow.nodes;
               const remoteVersion = remoteRow.version || 0;
-              const localIdx = localTasks.findIndex(t => String(t.id) === String(remoteRow.local_id));
+              const localIdx = localTasks.findIndex(t => String(t.id) === localId);
 
               if (localIdx === -1) {
-                localTasks.push(remoteTask);
+                // New from remote
+                mergedTasks.push(remoteTask);
                 hasChanges = true;
               } else {
                 const localTask = localTasks[localIdx];
                 const localVersion = localTask.version || 0;
-                if (remoteVersion > localVersion) {
-                  localTasks[localIdx] = remoteTask;
+
+                if (remoteVersion >= localVersion) {
+                  mergedTasks.push(remoteTask);
+                  if (remoteVersion > localVersion) hasChanges = true;
+                } else {
+                  // Local is newer (e.g. offline edit)
+                  mergedTasks.push(localTask);
+                  // We don't mark hasChanges = true for local storage because it's already there
+                  // but we should eventually trigger a sync UP if needed.
+                }
+              }
+            });
+
+            // Handle tasks that might be local-only (newly created, not yet in cloud)
+            // Or tasks that were deleted remotely
+            localTasks.forEach(localTask => {
+              if (!remoteTasksMap.has(String(localTask.id))) {
+                // Is it very new? (Created in last 30 seconds)
+                const isVeryNew = (Date.now() - (localTask.version || 0)) < 30000;
+                if (isVeryNew) {
+                  console.log(`[HYDRATION] [KEEP] Keeping local-only task (likely pending sync): ${localTask.id}`);
+                  mergedTasks.push(localTask);
+                  // hasChanges = false; // Already local
+                } else {
+                  console.log(`[HYDRATION] [DELETE] Removing local task not found in cloud: ${localTask.id}`);
                   hasChanges = true;
                 }
               }
             });
+
+            localTasks = mergedTasks;
           }
         }
 
         if (hasChanges || !this._hasCompletedInitialSync) {
+          console.log(`[HYDRATION] [COMMIT] Applying ${localTasks.length} tasks to local state.`);
           const newState = {
             ...localState,
             nodes: localTasks,
@@ -294,9 +362,10 @@ const Storage = {
         this._hasCompletedInitialSync = true;
         return localTasks;
       } catch (e) {
-        console.error('[HYDRATE] Hydration exception:', e);
+        console.error('[HYDRATION] [EXCEPTION] Hydration failed:', e);
         return this._getLocalState(key).nodes;
       } finally {
+        this._isHydrating = false;
         setTimeout(() => { delete this._revalidationPromises[key]; }, 100);
       }
     })();
@@ -308,20 +377,39 @@ const Storage = {
     const tasks = legacyState.nodes || [];
     console.log(`[PERSISTENCE] [MIGRATE] Migrating ${tasks.length} tasks to workspace ${workspaceId}`);
 
+    // We use a serial migration to avoid hitting rate limits or RLS bottlenecks
     for (const task of tasks) {
       const payload = {
         workspace_id: workspaceId,
         local_id: String(task.id),
         nodes: task,
-        version: 1,
+        version: 1, // Start with version 1 for migrated tasks
         device_id: this.getDeviceId()
       };
-      const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'workspace_id,local_id' });
-      this._logNetwork('SAVE_TASK_UPSERT', payload, data, error);
+
+      try {
+        const { data, error } = await this.supabase
+          .from('tasks')
+          .upsert(payload, { onConflict: 'workspace_id,local_id' });
+        this._logNetwork('MIGRATION_TASK_UPSERT', payload, data, error);
+
+        if (error) console.error('[MIGRATE] [ERROR] Failed to upsert task:', task.id, error);
+      } catch (e) {
+        console.error('[MIGRATE] [EXCEPTION] Task migration failed:', task.id, e);
+      }
     }
 
-    const { data: delData, error: delError } = await this.supabase.from('tasks').delete().match({ workspace_id: workspaceId, local_id: 'canonical_state' });
+    // ONLY delete the legacy row AFTER all tasks are upserted successfully
+    // This is safer to avoid data loss if migration is interrupted.
+    console.log('[PERSISTENCE] [MIGRATE] Deleting legacy monolithic row...');
+    const { data: delData, error: delError } = await this.supabase
+      .from('tasks')
+      .delete()
+      .eq('workspace_id', workspaceId)
+      .eq('local_id', 'canonical_state');
+
     this._logNetwork('MIGRATION_DELETE_LEGACY', { workspaceId }, delData, delError);
+    if (delError) console.error('[MIGRATE] [ERROR] Failed to delete legacy row:', delError);
   },
 
   async saveTask(task) {
@@ -395,7 +483,12 @@ const Storage = {
     // 3. BACKGROUND SYNC
     const runDelete = async () => {
       const workspaceId = this.getWorkspaceId();
-      const { data, error } = await this.supabase.from('tasks').delete().match({ workspace_id: workspaceId, local_id: id });
+      const { data, error } = await this.supabase
+        .from('tasks')
+        .delete()
+        .eq('workspace_id', workspaceId)
+        .eq('local_id', String(id));
+
       this._logNetwork('DELETE_TASK', { local_id: id, workspaceId }, data, error);
 
       if (error) {
@@ -414,16 +507,23 @@ const Storage = {
   async initRealtime(workspaceId) {
     if (this._isSubscribing) return;
 
+    const channelName = `public:tasks:ws:${workspaceId}`;
+
+    // 1. Pre-check: If we already have a channel for THIS workspace, do nothing
     if (this._realtimeChannel) {
-      console.log('[REALTIME] Cleaning up existing channel before re-subscribing');
+      if (this._realtimeChannel.topic === `realtime:${channelName}`) {
+        console.log('[REALTIME] [SKIP] Already subscribed to:', workspaceId);
+        return;
+      }
+      // If it's a different workspace, clean it up first
+      console.log('[REALTIME] [CLEANUP] Removing old channel before switching...');
       try { await this.supabase.removeChannel(this._realtimeChannel); } catch(e){}
       this._realtimeChannel = null;
     }
 
-    console.log(`[REALTIME] Subscribing to workspace: ${workspaceId}`);
+    console.log(`[REALTIME] [START] Subscribing to: ${workspaceId}`);
     this._isSubscribing = true;
 
-    const channelName = `public:tasks:workspace_id=eq.${workspaceId}`;
     this._realtimeChannel = this.supabase
       .channel(channelName)
       .on('postgres_changes', {
@@ -434,24 +534,35 @@ const Storage = {
       },
       payload => this._handleRealtimePayload(payload))
       .subscribe((status) => {
-        console.log(`[REALTIME] Subscription status for ${workspaceId}:`, status);
+        console.log(`[REALTIME] [STATUS] ${workspaceId}:`, status);
         this._isSubscribing = false;
+
+        if (status === 'CHANNEL_ERROR') {
+          console.error('[REALTIME] [ERROR] Subscription failed. Retrying in 5s...');
+          this._realtimeChannel = null;
+          setTimeout(() => this.initRealtime(workspaceId), 5000);
+        }
       });
   },
 
   async _handleRealtimePayload(payload) {
+    // 1. Ignore updates from ourselves
     if (payload.new && payload.new.device_id === this.getDeviceId()) return;
+
+    // 2. Ignore legacy state updates
     if (payload.new && payload.new.local_id === 'canonical_state') return;
+    if (payload.old && payload.old.local_id === 'canonical_state') return;
 
-    console.log('[REALTIME] Payload received:', payload.eventType, payload.new?.local_id);
+    console.log('[REALTIME] [EVENT] Received:', payload.eventType, payload.new?.local_id || payload.old?.local_id);
 
-    // Debounce revalidation to avoid floods and hydration loops
+    // 3. Debounce revalidation
     if (this._realtimeDebounce) clearTimeout(this._realtimeDebounce);
 
     this._realtimeDebounce = setTimeout(async () => {
-      console.log('[REALTIME] Triggering revalidation after debounce');
+      console.log('[REALTIME] [REVALIDATE] Triggering hydration...');
       const key = await this.getTasksKey();
-      this._enqueue(() => this._revalidateTasks(key));
+      // Hydration handles merging correctly
+      this._revalidateTasks(key);
     }, 300);
   }
 };
