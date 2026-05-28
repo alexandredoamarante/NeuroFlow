@@ -3,9 +3,6 @@ const SUPABASE_ANON_KEY = "sb_publishable_6YztmsKgxkLH-8OPtR14Wg_9EOeQTHo";
 
 const Storage = {
   supabase: supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY),
-  _session: null,
-  _sessionPromise: null,
-  _lastCheck: 0,
   _debounceTimers: {},
   _revalidationPromises: {},
   _syncQueue: Promise.resolve(),
@@ -172,44 +169,6 @@ const Storage = {
     await this.setWorkspaceId(newKey, { replaceLocalState: true });
   },
 
-  async getSession() {
-    if (this._sessionPromise) return this._sessionPromise;
-
-    const now = Date.now();
-    if (this._session && (now - this._lastCheck < 30000)) return this._session;
-
-    this._sessionPromise = (async () => {
-      try {
-        const { data: { session }, error } = await this.supabase.auth.getSession();
-        if (error) throw error;
-        this._session = session;
-        this._lastCheck = Date.now();
-        return session;
-      } catch (e) {
-        console.error('[AUTH] Session fetch error:', e.message);
-        return null;
-      } finally {
-        this._sessionPromise = null;
-      }
-    })();
-
-    return this._sessionPromise;
-  },
-
-  async requireUser() {
-    try {
-      const { data: { session }, error } = await this.supabase.auth.getSession();
-      if (error || !session || !session.user || !session.user.id) {
-        return null;
-      }
-      this._session = session;
-      this._lastCheck = Date.now();
-      return session.user;
-    } catch (e) {
-      console.error('[AUTH] requireUser error:', e.message);
-      return null;
-    }
-  },
 
   async getTasksKey() {
     const workspaceId = this.getWorkspaceId();
@@ -264,7 +223,7 @@ const Storage = {
     this._revalidationPromises[key] = (async () => {
       try {
         const workspaceId = this.getWorkspaceId();
-        console.log(`[HYDRATION] Revalidating workspace: ${workspaceId}`, options);
+        console.log(`[HYDRATION] [SELECT] Revalidating workspace: ${workspaceId}`, options);
 
         // Ensure realtime is active
         if (!this._realtimeChannel && !this._isSubscribing) {
@@ -277,6 +236,7 @@ const Storage = {
           .eq('workspace_id', workspaceId);
 
         this._logNetwork('FETCH_ALL_TASKS', { workspaceId }, data, error);
+        console.log(`[HYDRATION] [SELECT] Response from Supabase:`, { count: data?.length, error });
 
         if (error) {
           console.error('[HYDRATE] Supabase fetch error:', error.message);
@@ -346,6 +306,7 @@ const Storage = {
 
   async _migrateLegacyData(workspaceId, legacyState) {
     const tasks = legacyState.nodes || [];
+    console.log(`[PERSISTENCE] [MIGRATE] Migrating ${tasks.length} tasks to workspace ${workspaceId}`);
 
     for (const task of tasks) {
       const payload = {
@@ -367,8 +328,11 @@ const Storage = {
     const key = await this.getTasksKey();
 
     // Attach version for conflict resolution
+    // Ensure BIGINT compatible timestamp
     task.version = Date.now();
     task.updated_at = new Date().toISOString();
+
+    console.log(`[PERSISTENCE] [SAVE] Optimistic save for task: ${task.id}`);
 
     // 1. OPTIMISTIC UPDATE: Local cache immediately
     const state = this._getLocalState(key);
@@ -385,7 +349,7 @@ const Storage = {
     // 3. BACKGROUND SYNC: Enqueue Supabase operation
     const runUpsert = async () => {
       const workspaceId = this.getWorkspaceId();
-      console.log(`[SYNC] Saving task: ${task.id} to workspace: ${workspaceId}`);
+      console.log(`[PERSISTENCE] [INSERT/UPSERT] Syncing task: ${task.id} to workspace: ${workspaceId}`);
 
       const payload = {
         workspace_id: workspaceId,
@@ -395,13 +359,19 @@ const Storage = {
         device_id: this.getDeviceId()
       };
 
-      const { data, error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'workspace_id,local_id' }).select();
+      const { data, error } = await this.supabase
+        .from('tasks')
+        .upsert(payload, { onConflict: 'workspace_id,local_id' })
+        .select();
+
       this._logNetwork('SAVE_TASK_UPSERT', { ...payload }, data, error);
 
       if (error) {
-        console.error('[SYNC] Supabase upsert failed:', error);
+        console.error('[PERSISTENCE] [ERROR] Supabase upsert failed:', error.message, error.details);
         throw error;
       }
+
+      console.log(`[PERSISTENCE] [SUCCESS] Task ${task.id} synced remotely.`);
 
       // Re-dispatch after cloud confirmation to ensure UI reflects final state
       const finalTasks = this._getLocalState(key).nodes;
@@ -440,84 +410,6 @@ const Storage = {
     return this._enqueue(runDelete);
   },
 
-  async syncOnLogin() {
-    // Legacy support, mostly redundant now
-    try {
-      const { data: { user } } = await this.supabase.auth.getUser();
-      const workspaceId = this.getWorkspaceId();
-      const key = await this.getTasksKey();
-
-      await this.initRealtime(workspaceId);
-      this._hasCompletedInitialSync = false;
-      await this._revalidateTasks(key);
-
-      if (user) {
-        await this._runMigration({ user }, key);
-      }
-    } catch (e) {
-      console.error('[AUTH] syncOnLogin error:', e);
-    }
-  },
-
-  async _runMigration(session, key) {
-    // Migrates old anonymous data to the current workspace
-    const workspaceId = this.getWorkspaceId();
-    const migrationFlag = `neuroaark_ws_migrated_${workspaceId}`;
-    if (localStorage.getItem(migrationFlag) === 'true') return;
-
-    const anonRaw = localStorage.getItem('neuroaark_tasks_anonymous');
-    if (!anonRaw) {
-        localStorage.setItem(migrationFlag, 'true');
-        return;
-    }
-
-    let anonTasks = [];
-    try {
-        const parsed = JSON.parse(anonRaw);
-        anonTasks = Array.isArray(parsed) ? parsed : (parsed.nodes || []);
-    } catch(e) {}
-
-    if (anonTasks.length > 0) {
-      this._hasCompletedInitialSync = true;
-
-      for (const task of anonTasks) {
-        const payload = {
-          user_id: session?.user?.id || null,
-          workspace_id: workspaceId,
-          local_id: String(task.id),
-          nodes: task,
-          version: Date.now(),
-          device_id: this.getDeviceId()
-        };
-        const { error } = await this.supabase.from('tasks').upsert(payload, { onConflict: 'workspace_id,local_id' });
-        if (error) console.error('[MIGRATE] Error migrating task:', task.id, error);
-      }
-      localStorage.setItem(migrationFlag, 'true');
-      localStorage.removeItem('neuroaark_tasks_anonymous');
-      await this._revalidateTasks(key);
-    } else {
-        localStorage.setItem(migrationFlag, 'true');
-    }
-  },
-
-  async clearSession() {
-    this._hasCompletedInitialSync = false;
-    this._isHydrating = false;
-
-    if (this._realtimeChannel) {
-      try { await this.supabase.removeChannel(this._realtimeChannel); } catch(e){}
-      this._realtimeChannel = null;
-    }
-
-    this._debounceTimers = {};
-    this._revalidationPromises = {};
-    this._syncQueue = Promise.resolve();
-    this._offlineQueue = [];
-    this._session = null;
-    this._sessionPromise = null;
-    localStorage.removeItem('neuroaark_tasks_anonymous');
-    console.log('[AUTH] Logout complete.');
-  },
 
   async initRealtime(workspaceId) {
     if (this._isSubscribing) return;
