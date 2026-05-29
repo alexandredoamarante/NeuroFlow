@@ -197,9 +197,12 @@ const Storage = {
     if (!id) return;
     console.log(`[WORKSPACE] [SWITCH] Switching to workspace: ${id}`, options);
 
-    // Hard safety lock
+    // Hard safety lock: block all remote writes until the NEW workspace is stable
     this._isTransitioning = true;
     this._suspendOutgoingSync = true;
+
+    // Reset local hydration flag for the NEW workspace
+    this._hasCompletedInitialSync = false;
 
     await this.resetWorkspaceLifecycle();
 
@@ -282,8 +285,8 @@ const Storage = {
   async getTasks() {
     const key = await this.getTasksKey();
 
-    if (this.isSyncEnabled() && !this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
-      this._revalidateTasks(key);
+    if (this.isSyncEnabled() && !this._hasCompletedInitialSync) {
+      await this._revalidateTasks(key);
     }
     const state = this._getLocalState(key);
     return state.nodes || [];
@@ -292,8 +295,8 @@ const Storage = {
   async getTask(id) {
     const key = await this.getTasksKey();
 
-    if (this.isSyncEnabled() && !this._hasCompletedInitialSync && !this._revalidationPromises[key]) {
-      this._revalidateTasks(key);
+    if (this.isSyncEnabled() && !this._hasCompletedInitialSync) {
+      await this._revalidateTasks(key);
     }
     const state = this._getLocalState(key);
     const tasks = state.nodes || [];
@@ -307,6 +310,7 @@ const Storage = {
       return this._getLocalState(key).nodes;
     }
 
+    // Return existing promise if already hydrating for THIS key
     if (this._revalidationPromises[key]) return this._revalidationPromises[key];
 
     this._revalidationPromises[key] = (async () => {
@@ -321,6 +325,7 @@ const Storage = {
           this.initRealtime(workspaceId);
         }
 
+        console.log(`[HYDRATION] [FETCH] Fetching remote tasks for WS: ${workspaceId}`);
         const { data, error } = await this.supabase
           .from('tasks')
           .select('*')
@@ -336,7 +341,7 @@ const Storage = {
         }
 
         const dataArray = Array.isArray(data) ? data : (data ? [data] : []);
-        console.log(`[HYDRATION] [FETCH] Found ${dataArray.length} remote rows.`);
+        console.log(`[HYDRATION] [FETCH] Found ${dataArray.length} remote rows.`, dataArray);
 
         const localState = options.replaceLocalState ? { nodes: [] } : this._getLocalState(key);
         let localTasks = [...(localState.nodes || [])];
@@ -406,9 +411,17 @@ const Storage = {
             // Or tasks that were deleted remotely
             localTasks.forEach(localTask => {
               if (!remoteTasksMap.has(String(localTask.id))) {
-                // RULE: Never delete local data during hydration unless replaceLocalState is explicitly requested.
+                // RULE 1: If remote is completely empty, it might be a newly created workspace
+                // OR a failed fetch that returned empty data. We MUST preserve all local data.
+                if (remoteTasksMap.size === 0) {
+                  console.log(`[HYDRATION] [KEEP] Remote is empty. Preserving local task: ${localTask.id}`);
+                  mergedTasks.push(localTask);
+                  return;
+                }
+
+                // RULE 2: If we are merging, never delete local data.
                 // This prevents "disappearing tasks" bug due to network/RLS issues.
-                console.log(`[HYDRATION] [KEEP] Preserving local task missing from cloud: ${localTask.id}`);
+                console.log(`[HYDRATION] [KEEP] Local-only task preserved (Merge mode): ${localTask.id}`);
                 mergedTasks.push(localTask);
                 // Note: We don't mark hasChanges=true because it's already local
               }
@@ -430,8 +443,13 @@ const Storage = {
           // CRITICAL: Ensure sync remains suspended during the state apply
           // to prevent the apply itself from triggering a re-sync UP.
           this._suspendOutgoingSync = true;
-          this._setLocalState(key, newState);
-          window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: localTasks }));
+          try {
+            this._setLocalState(key, newState);
+            window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: localTasks }));
+          } finally {
+            // Delay release of the lock to ensure event listeners finished processing
+            setTimeout(() => { this._suspendOutgoingSync = false; }, 100);
+          }
         }
 
         this._hasCompletedInitialSync = true;
@@ -531,7 +549,7 @@ const Storage = {
 
       const workspaceId = workspaceIdAtTimeOfSave;
 
-      console.log(`[SYNC] [REMOTE_WRITE] [UPSERT] Workspace: ${workspaceId}, Task: ${task.id}`);
+      console.log(`[SYNC] [REMOTE_WRITE] [UPSERT] Workspace: ${workspaceId}, Task: ${task.id}`, task);
 
       const payload = {
         workspace_id: workspaceId,
@@ -607,7 +625,7 @@ const Storage = {
         return;
       }
       const workspaceId = workspaceIdAtTimeOfDelete;
-      console.log('[REMOTE_DELETE] Workspace:', workspaceId, 'Task:', id);
+      console.log(`[SYNC] [REMOTE_DELETE] Workspace: ${workspaceId}, Task: ${id}`);
 
       const { data, error } = await this.supabase
         .from('tasks')

@@ -76,17 +76,17 @@ const Auth = {
       if (proceed) {
         console.log('[WORKSPACE_SWITCH] [START] Joining workspace:', newKey);
 
-        // 1. Mark sync as enabled in storage state (but don't trigger push yet)
-        localStorage.setItem('neuroaark_sync_enabled', 'true');
-
-        // 2. Switch workspace. Since sync is now enabled, this will trigger hydration.
-        // setWorkspaceId handles lifecycle reset, realtime, and initial sync.
+        // 1. Switch identity locally (this will trigger hydration if sync was already on)
+        // We use replaceLocalState: true to ensure the NEW workspace starts with a clean slate
+        // or its own remote data, without carrying over tasks from the previous session.
         await Storage.setWorkspaceId(newKey, { replaceLocalState: true });
+
+        // 2. Explicitly ensure sync is enabled for the new identity
+        await Storage.setSyncEnabled(true);
 
         this.updateUI();
         if (workspaceModal) workspaceModal.style.display = 'none';
         console.log('[WORKSPACE_SWITCH] [SUCCESS] Workspace joined and synced.');
-        // Page reload removed as requested. Storage events will trigger UI updates.
       }
       joinWorkspaceBtn.disabled = false;
     });
