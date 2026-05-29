@@ -47,40 +47,41 @@
       </div>
       <span class="brand-name">neuroaark</span>
     </div>
-    <div class="header-right">
-      <button class="lg-btn ghost sm" id="exportWorkspaceBtn" title="Exportar Workspace">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;margin-right:4px;">
+    <div class="header-right" style="display: flex; align-items: center; gap: 0.5rem;">
+      <button class="lg-btn ghost sm" id="exportWorkspaceBtn" title="Exportar Workspace" style="display: flex; align-items: center; height: 32px; padding: 0 10px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-right:6px;">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="17 8 12 3 7 8"></polyline>
           <line x1="12" y1="3" x2="12" y2="15"></line>
         </svg>
-        <span>Exportar</span>
+        <span style="font-size: 0.85rem;">Exportar</span>
       </button>
-      <button class="lg-btn ghost sm" id="importWorkspaceBtn" title="Importar Workspace">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;margin-right:4px;">
+      <button class="lg-btn ghost sm" id="importWorkspaceBtn" title="Importar Workspace" style="display: flex; align-items: center; height: 32px; padding: 0 10px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-right:6px;">
           <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
           <polyline points="7 10 12 15 17 10"></polyline>
           <line x1="12" y1="15" x2="12" y2="3"></line>
         </svg>
-        <span>Importar</span>
+        <span style="font-size: 0.85rem;">Importar</span>
       </button>
       <input type="file" id="workspaceFileInput" style="display: none;" accept=".json">
-      <button class="lg-btn ghost sm" id="authBtn" title="Configurar Sincronização" style="display: none;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;margin-right:4px;">
+      <div style="width: 1px; height: 16px; background: var(--glass-border); margin: 0 4px; opacity: 0.5;"></div>
+      <button class="lg-btn ghost sm" id="authBtn" title="Configurar Sincronização" style="display: none; align-items: center; height: 32px; padding: 0 10px;">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-right:6px;">
           <path d="M22 12a10 10 0 0 1-10 10A10 10 0 0 1 2 12a10 10 0 0 1 10-10 10 10 0 0 1 10 10z"></path>
           <path d="M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"></path>
           <path d="M2 12h20"></path>
         </svg>
-        <span id="authText">Sync</span>
+        <span id="authText" style="font-size: 0.85rem;">Sync</span>
       </button>
-      <button class="lg-btn ghost sm" id="infoToggle" title="Guia de formatação">
+      <button class="lg-btn ghost sm" id="infoToggle" title="Guia de formatação" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
           <circle cx="12" cy="12" r="10"></circle>
           <line x1="12" y1="16" x2="12" y2="12"></line>
           <line x1="12" y1="8" x2="12.01" y2="8"></line>
         </svg>
       </button>
-      <button class="lg-btn ghost sm theme-toggle" id="themeToggle" title="Alternar tema">
+      <button class="lg-btn ghost sm theme-toggle" id="themeToggle" title="Alternar tema" style="display: flex; align-items: center; justify-content: center; width: 32px; height: 32px; padding: 0;">
         <svg class="icon-moon" viewBox="0 0 20 20" fill="none">
           <path d="M17.293 13.293A8 8 0 016.707 2.707a8.001 8.001 0 1010.586 10.586z" fill="currentColor"/>
         </svg>
@@ -152,27 +153,38 @@
 <!-- Workspace Modal -->
 <div class="modal-overlay" id="workspaceModal" style="display:none">
   <div class="glass modal-panel small">
-    <h3 class="panel-title">Configurações de Workspace</h3>
-    <p class="modal-text">Gerencie a identidade local do seu workspace. A sincronização em nuvem está desativada para garantir estabilidade e segurança dos dados.</p>
+    <h3 class="panel-title">COMO FUNCIONA O SALVAMENTO</h3>
+    <p class="modal-text" style="margin-bottom: 1rem;">Suas notas são salvas automaticamente de forma local no seu navegador.</p>
 
-    <div class="workspace-display-box" style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: space-between;">
-      <code id="workspaceKeyDisplay" style="font-family: 'DM Mono', monospace; font-size: 0.9rem; color: #fff;">----</code>
-      <button class="lg-btn ghost sm" id="copyWorkspaceKey" title="Copiar chave" style="padding: 4px;">
-        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect><path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path></svg>
-      </button>
-    </div>
+    <p class="modal-text" style="margin-bottom: 0.5rem; font-weight: 500;">Para usar o NeuroFlow em outro dispositivo:</p>
+    <ol class="modal-text" style="margin-left: 1.2rem; margin-bottom: 1rem; line-height: 1.4;">
+      <li>Exportar seu workspace</li>
+      <li>Transferir o arquivo workspace.json</li>
+      <li>Importar em outro dispositivo</li>
+    </ol>
 
-    <div style="margin-top: 1rem;">
-      <p class="modal-text" style="margin-bottom: 0.5rem; font-size: 0.8rem;">Trocar chave de workspace (Local):</p>
-      <div style="display: flex; gap: 0.5rem;">
-        <input class="lg-input sm" id="workspaceInput" placeholder="cole-sua-chave-aqui" autocomplete="off"/>
-        <button class="lg-btn primary sm" id="joinWorkspaceBtn">Trocar</button>
+    <p class="modal-text" style="margin-bottom: 1rem; font-size: 0.85rem; opacity: 0.9;">Isso preserva: notas, hierarquia, destaques, comentários, wikilinks, formatação e imagens.</p>
+
+    <div class="modal-actions" style="flex-direction: column; gap: 0.8rem; align-items: stretch;">
+      <div style="display: flex; gap: 0.8rem;">
+        <button class="lg-btn ghost sm" id="exportWorkspaceBtnModal" style="flex: 1;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-right:6px;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="17 8 12 3 7 8"></polyline>
+            <line x1="12" y1="3" x2="12" y2="15"></line>
+          </svg>
+          Exportar
+        </button>
+        <button class="lg-btn ghost sm" id="importWorkspaceBtnModal" style="flex: 1;">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:14px;height:14px;margin-right:6px;">
+            <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+            <polyline points="7 10 12 15 17 10"></polyline>
+            <line x1="12" y1="15" x2="12" y2="3"></line>
+          </svg>
+          Importar
+        </button>
       </div>
-    </div>
-
-    <div class="modal-actions" style="justify-content: space-between;">
-      <button class="lg-btn danger sm" id="leaveWorkspaceBtn" title="Sair do workspace atual e criar um novo">Sair</button>
-      <button class="lg-btn ghost sm" id="workspaceClose">Fechar</button>
+      <button class="lg-btn primary sm" id="workspaceClose">Fechar</button>
     </div>
   </div>
 </div>

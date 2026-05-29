@@ -2,14 +2,11 @@ const authBtn = document.getElementById('authBtn');
 const authText = document.getElementById('authText');
 const workspaceModal = document.getElementById('workspaceModal');
 const workspaceClose = document.getElementById('workspaceClose');
-const workspaceKeyDisplay = document.getElementById('workspaceKeyDisplay');
-const workspaceInput = document.getElementById('workspaceInput');
-const joinWorkspaceBtn = document.getElementById('joinWorkspaceBtn');
-const copyWorkspaceKey = document.getElementById('copyWorkspaceKey');
-const leaveWorkspaceBtn = document.getElementById('leaveWorkspaceBtn');
 
 const exportWorkspaceBtn = document.getElementById('exportWorkspaceBtn');
 const importWorkspaceBtn = document.getElementById('importWorkspaceBtn');
+const exportWorkspaceBtnModal = document.getElementById('exportWorkspaceBtnModal');
+const importWorkspaceBtnModal = document.getElementById('importWorkspaceBtnModal');
 const workspaceFileInput = document.getElementById('workspaceFileInput');
 
 /**
@@ -31,11 +28,21 @@ const Auth = {
       this.openWorkspaceModal();
     });
 
+    // Header buttons
     exportWorkspaceBtn?.addEventListener('click', () => {
       Storage.exportWorkspace();
     });
 
     importWorkspaceBtn?.addEventListener('click', () => {
+      workspaceFileInput?.click();
+    });
+
+    // Modal buttons
+    exportWorkspaceBtnModal?.addEventListener('click', () => {
+      Storage.exportWorkspace();
+    });
+
+    importWorkspaceBtnModal?.addEventListener('click', () => {
       workspaceFileInput?.click();
     });
 
@@ -68,40 +75,6 @@ const Auth = {
       if (e.target === workspaceModal) workspaceModal.style.display = 'none';
     });
 
-    copyWorkspaceKey?.addEventListener('click', () => {
-      const key = Storage.getWorkspaceId();
-      navigator.clipboard.writeText(key).then(() => {
-        const originalSvg = copyWorkspaceKey.innerHTML;
-        copyWorkspaceKey.innerHTML = '<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:16px;height:16px;"><path d="M20 6L9 17l-5-5"></path></svg>';
-        setTimeout(() => { copyWorkspaceKey.innerHTML = originalSvg; }, 2000);
-      });
-    });
-
-    joinWorkspaceBtn?.addEventListener('click', async () => {
-      const newKey = workspaceInput.value.trim();
-      if (!newKey) return;
-
-      joinWorkspaceBtn.disabled = true;
-      const proceed = confirm(`Deseja trocar para o workspace "${newKey}"?`);
-
-      if (proceed) {
-        console.log('[WORKSPACE_SWITCH] [START] Joining workspace:', newKey);
-        // Switch identity locally. non-destructive by default now.
-        await Storage.setWorkspaceId(newKey);
-        this.updateUI();
-        if (workspaceModal) workspaceModal.style.display = 'none';
-        console.log('[WORKSPACE_SWITCH] [SUCCESS] Workspace switched.');
-      }
-      joinWorkspaceBtn.disabled = false;
-    });
-
-    leaveWorkspaceBtn?.addEventListener('click', async () => {
-      if (confirm('Tem certeza que deseja sair deste workspace? Você será movido para um novo workspace anônimo.')) {
-        await Storage.leaveWorkspace();
-        this.updateUI();
-      }
-    });
-
     document.addEventListener('keydown', (e) => {
       if (e.key === 'Escape' && workspaceModal && workspaceModal.style.display === 'flex') {
         workspaceModal.style.display = 'none';
@@ -111,7 +84,6 @@ const Auth = {
 
   openWorkspaceModal() {
     if (!workspaceModal) return;
-    workspaceKeyDisplay.textContent = Storage.getWorkspaceId();
     workspaceModal.style.display = 'flex';
   },
 
