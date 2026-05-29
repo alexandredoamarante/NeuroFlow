@@ -55,10 +55,6 @@ const Auth = {
       }
     });
 
-    // Ensure workspace starts in local mode
-    const wsId = Storage.getWorkspaceId();
-    console.log('[WORKSPACE] Initializing with ID:', wsId);
-
     // Initial UI update
     this.updateUI();
 
@@ -93,12 +89,12 @@ const Auth = {
   updateUI() {
     if (!authBtn || !authText) return;
 
-    authText.textContent = 'Local';
+    authText.textContent = 'Workspace';
     authBtn.classList.remove('primary');
     authBtn.classList.add('ghost');
 
     const wsId = Storage.getWorkspaceId();
-    authBtn.title = `Workspace: ${wsId} (Local/Offline)`;
+    authBtn.title = `Sincronização Local (ID: ${wsId})`;
   }
 };
 
