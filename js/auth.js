@@ -75,24 +75,27 @@ const Auth = {
 
       if (proceed) {
         console.log('[WORKSPACE_SWITCH] [START] Joining workspace:', newKey);
-        // 1. Switch workspace FIRST (but keep sync disabled temporarily during switch)
+
+        // 1. Mark sync as enabled in storage state (but don't trigger push yet)
+        localStorage.setItem('neuroaark_sync_enabled', 'true');
+
+        // 2. Switch workspace. Since sync is now enabled, this will trigger hydration.
+        // setWorkspaceId handles lifecycle reset, realtime, and initial sync.
         await Storage.setWorkspaceId(newKey, { replaceLocalState: true });
-        // 2. Enable sync for the NEW workspace
-        await Storage.setSyncEnabled(true);
 
         this.updateUI();
         if (workspaceModal) workspaceModal.style.display = 'none';
-        console.log('[WORKSPACE_SWITCH] [SUCCESS] Workspace joined. Reloading...');
-        window.location.reload();
+        console.log('[WORKSPACE_SWITCH] [SUCCESS] Workspace joined and synced.');
+        // Page reload removed as requested. Storage events will trigger UI updates.
       }
       joinWorkspaceBtn.disabled = false;
     });
 
     leaveWorkspaceBtn?.addEventListener('click', async () => {
-      if (confirm('Tem certeza que deseja sair deste workspace? Você será movido para um novo workspace anônimo.')) {
+      if (confirm('Tem certeza que deseja sair deste workspace? Você será movido para um novo workspace anônimo e o modo offline será ativado.')) {
         await Storage.leaveWorkspace();
         this.updateUI();
-        window.location.reload();
+        // Page reload removed as requested.
       }
     });
 
@@ -125,7 +128,7 @@ const Auth = {
                 if (confirm('Deseja ativar a sincronização em nuvem para este workspace?')) {
                     await Storage.setSyncEnabled(true);
                     this.updateUI();
-                    window.location.reload();
+                    // Page reload removed as requested.
                 }
             });
         }

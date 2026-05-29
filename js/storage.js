@@ -41,16 +41,25 @@ const Storage = {
    */
   _logNetwork(action, payload, response, error) {
     const timestamp = new Date().toISOString();
+    const workspaceId = this._workspaceId || 'N/A';
 
     const logEntry = {
       timestamp,
+      workspaceId,
       action,
       payload: payload ? JSON.parse(JSON.stringify(payload)) : null,
       response: response ? JSON.parse(JSON.stringify(response)) : null,
       error: error ? { message: error.message, details: error.details, code: error.code } : null
     };
 
-    console.group(`[FORENSIC] [${timestamp}] ${action}`);
+    // Determine prefix based on action
+    let prefix = '[FORENSIC]';
+    if (action.includes('FETCH')) prefix = '[HYDRATION]';
+    if (action.includes('WRITE')) prefix = '[REMOTE_WRITE]';
+    if (action.includes('DELETE')) prefix = '[REMOTE_DELETE]';
+    if (action.includes('SYNC')) prefix = '[SYNC]';
+
+    console.group(`${prefix} [${timestamp}] [WS:${workspaceId}] ${action}`);
     if (payload) console.log('Payload:', logEntry.payload);
     if (response) console.log('Response:', logEntry.response);
     if (error) console.error('Error Details:', error);
@@ -140,8 +149,7 @@ const Storage = {
 
   async resetWorkspaceLifecycle() {
     console.log('[WORKSPACE] [RESET] Resetting all lifecycle state...');
-    this._isTransitioning = true;
-    this._suspendOutgoingSync = true;
+    // Note: Caller usually sets _isTransitioning and _suspendOutgoingSync
     this._hasCompletedInitialSync = false;
 
     // 1. Destroy old realtime
@@ -187,7 +195,11 @@ const Storage = {
 
   async setWorkspaceId(id, options = {}) {
     if (!id) return;
-    console.log(`[WORKSPACE] Switching to workspace: ${id}`, options);
+    console.log(`[WORKSPACE] [SWITCH] Switching to workspace: ${id}`, options);
+
+    // Hard safety lock
+    this._isTransitioning = true;
+    this._suspendOutgoingSync = true;
 
     await this.resetWorkspaceLifecycle();
 
@@ -197,16 +209,22 @@ const Storage = {
     const key = await this.getTasksKey();
 
     if (options.replaceLocalState) {
-      console.log('[WORKSPACE] Clearing local state for new workspace');
+      console.log('[WORKSPACE] [CLEANUP] Clearing local state for new workspace');
       localStorage.removeItem(key);
     }
 
-    // Trigger immediate hydration with full replacement if requested
-    await this.initRealtime(id);
-    await this._revalidateTasks(key, {
-      forceRemote: true,
-      replaceLocalState: options.replaceLocalState
-    });
+    // Trigger immediate hydration ONLY if sync is already enabled
+    if (this.isSyncEnabled()) {
+      console.log('[WORKSPACE] [SYNC] Sync enabled, initializing realtime and hydration.');
+      await this.initRealtime(id);
+      await this._revalidateTasks(key, {
+        forceRemote: true,
+        replaceLocalState: options.replaceLocalState
+      });
+    } else {
+      console.log('[WORKSPACE] [OFFLINE] Sync disabled, staying in local mode.');
+      this._hasCompletedInitialSync = true;
+    }
 
     this._isTransitioning = false;
     this._suspendOutgoingSync = false;
@@ -214,15 +232,24 @@ const Storage = {
   },
 
   async leaveWorkspace() {
-    console.log('[WORKSPACE] [LEAVE] Leaving workspace. Sync will be disabled.');
-    // RULE: We DO NOT clear local tasks here. We just switch workspace and disable sync.
-    // This allows the user to keep their data in the new anonymous workspace if they want.
-    this.setSyncEnabled(false);
+    console.log('[WORKSPACE] [LEAVE] Leaving workspace. Returning to Offline Mode.');
+
+    // Hard safety lock
+    this._isTransitioning = true;
+    this._suspendOutgoingSync = true;
+
+    // 1. Disable sync state first
+    localStorage.setItem('neuroaark_sync_enabled', 'false');
+
+    // 2. Generate new key
     const newKey = this.generateWorkspaceKey();
 
-    // We DO NOT use replaceLocalState: true because we want to preserve the data locally
-    // in the new anonymous workspace context.
-    await this.setWorkspaceId(newKey, { replaceLocalState: false });
+    // 3. Perform the switch with cleanup
+    // We use replaceLocalState: true here because leaving a workspace means
+    // starting fresh in a new anonymous workspace.
+    await this.setWorkspaceId(newKey, { replaceLocalState: true });
+
+    console.log('[WORKSPACE] [LEAVE] App returned to safe local mode.');
   },
 
 
@@ -399,11 +426,16 @@ const Storage = {
             updated_at: new Date().toISOString(),
             device_id: this.getDeviceId()
           };
+
+          // CRITICAL: Ensure sync remains suspended during the state apply
+          // to prevent the apply itself from triggering a re-sync UP.
+          this._suspendOutgoingSync = true;
           this._setLocalState(key, newState);
           window.dispatchEvent(new CustomEvent('tasksUpdated', { detail: localTasks }));
         }
 
         this._hasCompletedInitialSync = true;
+        console.log('[HYDRATION] [SUCCESS] Workspace hydration complete.');
         return localTasks;
       } catch (e) {
         console.error('[HYDRATION] [EXCEPTION] Hydration failed:', e);
@@ -459,7 +491,7 @@ const Storage = {
 
   async saveTask(task) {
     if (this._isTransitioning || this._suspendOutgoingSync) {
-      console.warn('[SYNC] [SAVE] [LOCKED] Sync suspended or transitioning. Queueing for later.');
+      console.warn('[SYNC] [SAVE] [LOCKED] Sync suspended or transitioning. Will wait if sync enabled.');
     }
     const key = await this.getTasksKey();
     const workspaceIdAtTimeOfSave = this.getWorkspaceId();
@@ -549,7 +581,7 @@ const Storage = {
 
   async deleteTask(id) {
     if (this._isTransitioning || this._suspendOutgoingSync) {
-      console.warn('[SYNC] [DELETE] [LOCKED] Sync suspended or transitioning. Queueing for later.');
+      console.warn('[SYNC] [DELETE] [LOCKED] Sync suspended or transitioning. Will wait if sync enabled.');
     }
     const key = await this.getTasksKey();
     const workspaceIdAtTimeOfDelete = this.getWorkspaceId();
