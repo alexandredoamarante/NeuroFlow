@@ -8,6 +8,10 @@ const joinWorkspaceBtn = document.getElementById('joinWorkspaceBtn');
 const copyWorkspaceKey = document.getElementById('copyWorkspaceKey');
 const leaveWorkspaceBtn = document.getElementById('leaveWorkspaceBtn');
 
+const exportWorkspaceBtn = document.getElementById('exportWorkspaceBtn');
+const importWorkspaceBtn = document.getElementById('importWorkspaceBtn');
+const workspaceFileInput = document.getElementById('workspaceFileInput');
+
 /**
  * Workspace management module for neuroaark.
  * Handles Workspace-key synchronization.
@@ -27,12 +31,26 @@ const Auth = {
       this.openWorkspaceModal();
     });
 
-    // Ensure workspace sync starts ONLY if enabled
+    exportWorkspaceBtn?.addEventListener('click', () => {
+      Storage.exportWorkspace();
+    });
+
+    importWorkspaceBtn?.addEventListener('click', () => {
+      workspaceFileInput?.click();
+    });
+
+    workspaceFileInput?.addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (file) {
+        await Storage.importWorkspace(file);
+        e.target.value = ''; // Reset input
+        this.updateUI();
+      }
+    });
+
+    // Ensure workspace starts in local mode
     const wsId = Storage.getWorkspaceId();
-    console.log('[WORKSPACE] Initializing with ID:', wsId, 'Sync enabled:', Storage.isSyncEnabled());
-    if (Storage.isSyncEnabled()) {
-      Storage.initRealtime(wsId);
-    }
+    console.log('[WORKSPACE] Initializing with ID:', wsId);
 
     // Initial UI update
     this.updateUI();
@@ -64,38 +82,23 @@ const Auth = {
       if (!newKey) return;
 
       joinWorkspaceBtn.disabled = true;
-      const exists = await Storage.checkWorkspaceExists(newKey);
-
-      let proceed = false;
-      if (exists) {
-        proceed = confirm(`Deseja entrar no workspace "${newKey}"? A sincronização será ativada.`);
-      } else {
-        proceed = confirm(`O workspace "${newKey}" não existe. Deseja criá-lo e ativar a sincronização?`);
-      }
+      const proceed = confirm(`Deseja trocar para o workspace "${newKey}"?`);
 
       if (proceed) {
         console.log('[WORKSPACE_SWITCH] [START] Joining workspace:', newKey);
-
-        // 1. Switch identity locally (this will trigger hydration if sync was already on)
-        // We use replaceLocalState: true to ensure the NEW workspace starts with a clean slate
-        // or its own remote data, without carrying over tasks from the previous session.
-        await Storage.setWorkspaceId(newKey, { replaceLocalState: true });
-
-        // 2. Explicitly ensure sync is enabled for the new identity
-        await Storage.setSyncEnabled(true);
-
+        // Switch identity locally. non-destructive by default now.
+        await Storage.setWorkspaceId(newKey);
         this.updateUI();
         if (workspaceModal) workspaceModal.style.display = 'none';
-        console.log('[WORKSPACE_SWITCH] [SUCCESS] Workspace joined and synced.');
+        console.log('[WORKSPACE_SWITCH] [SUCCESS] Workspace switched.');
       }
       joinWorkspaceBtn.disabled = false;
     });
 
     leaveWorkspaceBtn?.addEventListener('click', async () => {
-      if (confirm('Tem certeza que deseja sair deste workspace? Você será movido para um novo workspace anônimo e o modo offline será ativado.')) {
+      if (confirm('Tem certeza que deseja sair deste workspace? Você será movido para um novo workspace anônimo.')) {
         await Storage.leaveWorkspace();
         this.updateUI();
-        // Page reload removed as requested.
       }
     });
 
@@ -109,34 +112,6 @@ const Auth = {
   openWorkspaceModal() {
     if (!workspaceModal) return;
     workspaceKeyDisplay.textContent = Storage.getWorkspaceId();
-
-    // Add "Enable Sync" button if currently offline
-    let enableSyncContainer = workspaceModal.querySelector('#enableSyncContainer');
-    if (!Storage.isSyncEnabled()) {
-        if (!enableSyncContainer) {
-            enableSyncContainer = document.createElement('div');
-            enableSyncContainer.id = 'enableSyncContainer';
-            enableSyncContainer.style.marginTop = '1rem';
-            enableSyncContainer.innerHTML = `
-                <button class="lg-btn primary sm w-full" id="enableSyncBtn">Ativar Sincronização em Nuvem</button>
-                <p class="modal-text" style="font-size: 0.7rem; margin-top: 0.4rem; opacity: 0.7;">Isso enviará suas notas locais para a nuvem sob esta chave.</p>
-            `;
-            const displayBox = workspaceModal.querySelector('.workspace-display-box');
-            displayBox.after(enableSyncContainer);
-
-            document.getElementById('enableSyncBtn').addEventListener('click', async () => {
-                if (confirm('Deseja ativar a sincronização em nuvem para este workspace?')) {
-                    await Storage.setSyncEnabled(true);
-                    this.updateUI();
-                    // Page reload removed as requested.
-                }
-            });
-        }
-        enableSyncContainer.style.display = 'block';
-    } else {
-        if (enableSyncContainer) enableSyncContainer.style.display = 'none';
-    }
-
     workspaceModal.style.display = 'flex';
   },
 
@@ -146,19 +121,12 @@ const Auth = {
   updateUI() {
     if (!authBtn || !authText) return;
 
-    const isSynced = Storage.isSyncEnabled();
-    authText.textContent = isSynced ? 'Synced' : 'Offline';
-
-    if (isSynced) {
-        authBtn.classList.add('primary');
-        authBtn.classList.remove('ghost');
-    } else {
-        authBtn.classList.remove('primary');
-        authBtn.classList.add('ghost');
-    }
+    authText.textContent = 'Local';
+    authBtn.classList.remove('primary');
+    authBtn.classList.add('ghost');
 
     const wsId = Storage.getWorkspaceId();
-    authBtn.title = `Workspace: ${wsId} (${isSynced ? 'Sincronizado' : 'Local/Offline'})`;
+    authBtn.title = `Workspace: ${wsId} (Local/Offline)`;
   }
 };
 
