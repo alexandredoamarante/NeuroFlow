@@ -1,120 +1,85 @@
 # neuroaark
 
-O **neuroaark** é uma ferramenta centralizada de organização e foco que combina anotações hierárquicas, gestão de tarefas e controle de tempo em um único ambiente. Ele funciona como um “segundo cérebro” local, priorizando desempenho, privacidade e simplicidade de uso.
+> Um segundo cérebro local. Sem contas. Sem nuvem. Sem distrações.
+
+**neuroaark** é uma ferramenta de organização e foco que unifica notas hierárquicas, gestão de tarefas e controle de tempo em um único ambiente — projetado para funcionar inteiramente no seu navegador, sem depender de servidores externos.
+
+**Acesso:** (https://neuroaark.pages.dev)
 
 ---
 
-## Acesso ao sistema
+## Filosofia
 
-A aplicação pode ser acessada diretamente pelo navegador:
+A maioria das ferramentas de produtividade exige que você confie seus dados a servidores de terceiros, crie contas e aceite que suas informações transitam por infraestruturas que você não controla.
 
-https://neuroaark.pages.dev/
+O neuroaark inverte essa lógica.
 
-Não é necessário criar conta, fazer login ou sincronizar dados com servidores externos.
-
----
-
-## Arquitetura e privacidade
-
-O neuroaark segue um modelo **offline-first**.
-
-Todos os dados (notas, tarefas, destaques e imagens) são armazenados exclusivamente no navegador do usuário por meio de **LocalStorage**.
-
-Isso significa:
-
-- Não existe envio de dados para nuvem  
-- Não há autenticação ou contas de usuário  
-- Os dados permanecem no dispositivo onde foram criados  
-- O acesso é imediato, sem dependências externas  
-
-Essa abordagem reduz pontos de falha e garante controle total do usuário sobre suas informações.
+Tudo é armazenado no seu próprio navegador, via **LocalStorage**. Não há login. Não há sincronização automática. Não há pontos de falha externos. O que você escreve pertence apenas ao seu dispositivo.
 
 ---
 
-## Portabilidade de dados (Workspace)
+## Funcionalidades
 
-Como os dados são locais, o sistema oferece um mecanismo de exportação e importação chamado **Workspace**.
+### Notas em Árvore Hierárquica
+Organize ideias em estruturas de subnota com profundidade infinita. A árvore se expande conforme o conteúdo cresce, sem limites artificiais de hierarquia.
 
-O usuário pode exportar todo o ambiente em um arquivo `workspace.json`, contendo todas as informações salvas.
+### Wikilinks (`[[Título da Nota]]`)
+Conecte notas entre si com links internos no estilo `[[Nome]]`. Ao clicar, o sistema localiza a nota automaticamente, expande a árvore até ela e aplica um efeito visual de destaque.
 
-Para isso:
+### Sistema de Destaques com Comentários
+Selecione qualquer trecho de texto de uma nota para criar um destaque independente. Cada destaque suporta:
+- Comentários laterais sem alterar o texto original
+- 5 cores para categorização visual
+- Detecção automática de URLs nos comentários
+- Persistência exata da posição do trecho
 
-- Acesse o botão **Workspace** no cabeçalho  
-- Selecione **Export Workspace**  
-- O arquivo será gerado automaticamente  
+### Formatação Especial de Texto
+- Linhas iniciadas com `>` → renderizadas como **greentext** (verde monoespaçado)
+- Linhas iniciadas com `<` → renderizadas como **redtext** (vermelho monoespaçado)
 
-O arquivo pode ser transferido livremente entre dispositivos (e-mail, pendrive ou armazenamento local).
+### Anexos de Mídia
+Adicione imagens a qualquer nota via upload ou URL. Arquivos enviados são convertidos para base64 e armazenados junto à nota, sem dependências externas.
 
-Para importar dados:
+### Checklist de Tarefas
+Gerencie listas de tarefas com acompanhamento visual de progresso e indicador de conclusão.
 
-- Abra **Workspace**  
-- Selecione **Import Workspace**  
-- Escolha o arquivo `workspace.json`  
+### Timer Pomodoro
+Sessões de trabalho focado com ciclos configuráveis para organização de produtividade.
 
-Antes da importação, o sistema cria automaticamente um backup do estado atual chamado `workspace-backup-before-import.json`, permitindo restauração em caso de erro.
-
----
-
-## Funcionalidades principais
-
-### Sistema de notas hierárquicas
-
-O neuroaark utiliza uma estrutura em árvore para organização de notas.
-
-- Criação de notas e subnotas em múltiplos níveis  
-- Estrutura infinita para organização de ideias complexas  
-- Expansão dinâmica da árvore conforme o conteúdo cresce  
-
-### Anexos de mídia
-
-- Imagens podem ser adicionadas por upload ou URL  
-- Arquivos enviados são convertidos para **base64** e armazenados junto à nota  
-
-### Conexões entre notas (Wikilinks)
-
-O sistema suporta links internos no formato `[[Nome da Nota]]`.
-
-Quando utilizados:
-
-- A nota alvo é localizada automaticamente  
-- A interface expande a árvore necessária  
-- A navegação é feita automaticamente até o destino  
-- Um efeito visual destaca a transição  
 
 ---
 
-### Formatação especial de texto
 
-- Linhas iniciadas com `>` são renderizadas como **greentext** (verde, monoespaçado)  
-- Linhas iniciadas com `<` são renderizadas como **redtext** (vermelho, monoespaçado)  
+## Portabilidade de Dados (Workspace)
+
+Como os dados são locais, o neuroaark oferece um sistema de exportação/importação para mover seu ambiente entre dispositivos.
+
+**Exportar:**
+1. Clique em **Workspace** no cabeçalho
+2. Selecione **Export Workspace**
+3. O arquivo `workspace.json` será gerado automaticamente
+
+**Importar:**
+1. Abra **Workspace**
+2. Selecione **Import Workspace**
+3. Escolha o arquivo `workspace.json`
+
+> Antes de qualquer importação, o sistema cria automaticamente um backup do estado atual como `workspace-backup-before-import.json`.
+
+
+---
+
+
+## Dicas de Uso
+
+**Zettelkasten com Wikilinks:** Crie notas interconectadas usando `[[Nome da Nota]]` para construir uma rede de conhecimento navegável.
+
+**Leitura Ativa com Destaques:** Use o sistema de highlights para "dialogar" com seus próprios textos — marque trechos e adicione camadas de análise sem alterar o conteúdo original.
+
+**Greentext para Conclusões:** Use `> ` no início de linhas para destacar insights, citações ou conclusões positivas de forma visual.
+
+**Redtext para Alertas:** Use `< ` para marcar pontos de atenção, erros ou itens que precisam de revisão.
+
 
 ---
 
-### Sistema de destaques (highlighting)
-
-O usuário pode selecionar qualquer trecho de uma nota para criar um destaque independente.
-
-- Cada destaque pode receber comentários próprios  
-- Comentários funcionam como anotações laterais sem alterar o texto original  
-- Suporte a múltiplos destaques por nota  
-- Até 5 cores para categorização visual  
-- Links em comentários são detectados automaticamente  
-
-Esse sistema é voltado para leitura ativa, estudo e análise de conteúdo.
-
----
-
-### Gestão de foco e produtividade
-
-#### Timer Pomodoro
-
-- Cronômetro para sessões de trabalho focado  
-- Ciclos configuráveis para organização de produtividade  
-
-#### Checklist de tarefas
-
-- Lista simples de execução de tarefas  
-- Acompanhamento visual de progresso  
-- Indicador de conclusão de tarefas  
-
----
