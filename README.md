@@ -1,43 +1,120 @@
 # neuroaark
 
-Uma ferramenta centralizada de organização e foco que une anotações hierárquicas, gestão de tempo e acompanhamento de tarefas.
-
-## Link de Acesso
-**[Acesse o neuroaark aqui](https://neuroaark.pages.dev/)**
+O **neuroaark** é uma ferramenta centralizada de organização e foco que combina anotações hierárquicas, gestão de tarefas e controle de tempo em um único ambiente. Ele funciona como um “segundo cérebro” local, priorizando desempenho, privacidade e simplicidade de uso.
 
 ---
 
-## Funcionalidades
+## Acesso ao sistema
 
-### 1. Notas Hierárquicas (Árvore de Notas)
-*   **Organização Multinível:** Crie notas e sub-notas de forma infinita para organizar pensamentos complexos ou projetos.
-*   **Anexos de Mídia:** Suporte para imagens (via Upload ou URL) com otimização automática de espaço.
-*   **Gestão de Visualização:** Controles para expandir ou recolher todos os níveis da árvore instantaneamente.
-*   **Conexões [[Wikilinks]]:** Crie links entre notas usando o formato `[[Título da Nota]]` para navegação rápida.
-*   **Estilização de Texto:** Suporte para **Greentext** (linhas começando com `>`) e **Redtext** (linhas começando com `<`) para destaque visual.
+A aplicação pode ser acessada diretamente pelo navegador:
 
-### 2. Marca-texto
-*   **Destaque Personalizado:** Selecione qualquer trecho de texto em uma nota renderizada para criar um destaque (highlight). Escolha entre 5 cores diferentes para organizar seus pensamentos.
-*   **Anotações Inline:** Clique em um destaque para abrir o painel de "Marcar Texto". Cada marcação suporta uma anotação detalhada com suporte a links clicáveis.
-*   **Foco na Leitura:** O painel possui rolagem interna e altura otimizada para leitura de textos longos, permitindo que você aprofunde suas anotações sem poluir a interface.
-*   **Edição Flexível:** Use o botão "Editar texto" para atualizar suas anotações a qualquer momento. No campo de texto, use `Enter` para salvar e `Shift + Enter` para quebrar linha.
+https://neuroaark.pages.dev/
 
-### 3. Gestão de Foco e Tempo
-*   **Timer Pomodoro:** Cronômetro integrado para sessões de trabalho focado, com ciclos personalizáveis.
-*   **Contador de Sessões:** Registro automático de ciclos de foco concluídos.
-
-### 4. Checklist de Execução
-*   **Lista de Tarefas:** Sistema de tarefas simples com marcação de conclusão.
-*   **Barra de Progresso:** Indicador visual da porcentagem de conclusão dos itens da lista.
-
-### 5. Tecnologia e Privacidade
-*   **Offline First:** Todos os dados são salvos localmente no seu navegador.
-*   **Sem Cadastro:** Comece a usar instantaneamente sem necessidade de conta ou login.
+Não é necessário criar conta, fazer login ou sincronizar dados com servidores externos.
 
 ---
 
-## Para o que pode ser usado?
-*   **Mapeamento Mental:** Estruturação de ideias e brainstorming.
-*   **Estudos:** Organização de matérias, tópicos e cronogramas de revisão.
-*   **Gestão de Projetos:** Divisão de grandes objetivos em pequenas tarefas acionáveis.
-*   **Diário ou Segundo Cérebro:** Registro de conhecimentos e referências com conexões rápidas.
+## Arquitetura e privacidade
+
+O neuroaark segue um modelo **offline-first**.
+
+Todos os dados (notas, tarefas, destaques e imagens) são armazenados exclusivamente no navegador do usuário por meio de **LocalStorage**.
+
+Isso significa:
+
+- Não existe envio de dados para nuvem  
+- Não há autenticação ou contas de usuário  
+- Os dados permanecem no dispositivo onde foram criados  
+- O acesso é imediato, sem dependências externas  
+
+Essa abordagem reduz pontos de falha e garante controle total do usuário sobre suas informações.
+
+---
+
+## Portabilidade de dados (Workspace)
+
+Como os dados são locais, o sistema oferece um mecanismo de exportação e importação chamado **Workspace**.
+
+O usuário pode exportar todo o ambiente em um arquivo `workspace.json`, contendo todas as informações salvas.
+
+Para isso:
+
+- Acesse o botão **Workspace** no cabeçalho  
+- Selecione **Export Workspace**  
+- O arquivo será gerado automaticamente  
+
+O arquivo pode ser transferido livremente entre dispositivos (e-mail, pendrive ou armazenamento local).
+
+Para importar dados:
+
+- Abra **Workspace**  
+- Selecione **Import Workspace**  
+- Escolha o arquivo `workspace.json`  
+
+Antes da importação, o sistema cria automaticamente um backup do estado atual chamado `workspace-backup-before-import.json`, permitindo restauração em caso de erro.
+
+---
+
+## Funcionalidades principais
+
+### Sistema de notas hierárquicas
+
+O neuroaark utiliza uma estrutura em árvore para organização de notas.
+
+- Criação de notas e subnotas em múltiplos níveis  
+- Estrutura infinita para organização de ideias complexas  
+- Expansão dinâmica da árvore conforme o conteúdo cresce  
+
+### Anexos de mídia
+
+- Imagens podem ser adicionadas por upload ou URL  
+- Arquivos enviados são convertidos para **base64** e armazenados junto à nota  
+
+### Conexões entre notas (Wikilinks)
+
+O sistema suporta links internos no formato `[[Nome da Nota]]`.
+
+Quando utilizados:
+
+- A nota alvo é localizada automaticamente  
+- A interface expande a árvore necessária  
+- A navegação é feita automaticamente até o destino  
+- Um efeito visual destaca a transição  
+
+---
+
+### Formatação especial de texto
+
+- Linhas iniciadas com `>` são renderizadas como **greentext** (verde, monoespaçado)  
+- Linhas iniciadas com `<` são renderizadas como **redtext** (vermelho, monoespaçado)  
+
+---
+
+### Sistema de destaques (highlighting)
+
+O usuário pode selecionar qualquer trecho de uma nota para criar um destaque independente.
+
+- Cada destaque pode receber comentários próprios  
+- Comentários funcionam como anotações laterais sem alterar o texto original  
+- Suporte a múltiplos destaques por nota  
+- Até 5 cores para categorização visual  
+- Links em comentários são detectados automaticamente  
+
+Esse sistema é voltado para leitura ativa, estudo e análise de conteúdo.
+
+---
+
+### Gestão de foco e produtividade
+
+#### Timer Pomodoro
+
+- Cronômetro para sessões de trabalho focado  
+- Ciclos configuráveis para organização de produtividade  
+
+#### Checklist de tarefas
+
+- Lista simples de execução de tarefas  
+- Acompanhamento visual de progresso  
+- Indicador de conclusão de tarefas  
+
+---
