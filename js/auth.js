@@ -3,8 +3,6 @@ const authText = document.getElementById('authText');
 const workspaceModal = document.getElementById('workspaceModal');
 const workspaceClose = document.getElementById('workspaceClose');
 
-const exportWorkspaceBtn = document.getElementById('exportWorkspaceBtn');
-const importWorkspaceBtn = document.getElementById('importWorkspaceBtn');
 const exportWorkspaceBtnModal = document.getElementById('exportWorkspaceBtnModal');
 const importWorkspaceBtnModal = document.getElementById('importWorkspaceBtnModal');
 const workspaceFileInput = document.getElementById('workspaceFileInput');
@@ -26,15 +24,6 @@ const Auth = {
       e.preventDefault();
       e.stopPropagation();
       this.openWorkspaceModal();
-    });
-
-    // Header buttons
-    exportWorkspaceBtn?.addEventListener('click', () => {
-      Storage.exportWorkspace();
-    });
-
-    importWorkspaceBtn?.addEventListener('click', () => {
-      workspaceFileInput?.click();
     });
 
     // Modal buttons
