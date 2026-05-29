@@ -48,6 +48,23 @@
       <span class="brand-name">neuroaark</span>
     </div>
     <div class="header-right">
+      <button class="lg-btn ghost sm" id="exportWorkspaceBtn" title="Exportar Workspace">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;margin-right:4px;">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        <span>Exportar</span>
+      </button>
+      <button class="lg-btn ghost sm" id="importWorkspaceBtn" title="Importar Workspace">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;margin-right:4px;">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="7 10 12 15 17 10"></polyline>
+          <line x1="12" y1="15" x2="12" y2="3"></line>
+        </svg>
+        <span>Importar</span>
+      </button>
+      <input type="file" id="workspaceFileInput" style="display: none;" accept=".json">
       <button class="lg-btn ghost sm" id="authBtn" title="Configurar Sincronização" style="display: none;">
         <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" style="width:16px;height:16px;margin-right:4px;">
           <path d="M22 12a10 10 0 0 1-10 10A10 10 0 0 1 2 12a10 10 0 0 1 10-10 10 10 0 0 1 10 10z"></path>
@@ -135,8 +152,8 @@
 <!-- Workspace Modal -->
 <div class="modal-overlay" id="workspaceModal" style="display:none">
   <div class="glass modal-panel small">
-    <h3 class="panel-title">Sincronização</h3>
-    <p class="modal-text">Sincronize seus dados entre dispositivos usando sua chave de workspace.</p>
+    <h3 class="panel-title">Configurações de Workspace</h3>
+    <p class="modal-text">Gerencie a identidade local do seu workspace. A sincronização em nuvem está desativada para garantir estabilidade e segurança dos dados.</p>
 
     <div class="workspace-display-box" style="background: rgba(0,0,0,0.2); padding: 12px; border-radius: var(--radius-md); border: 1px solid var(--glass-border); display: flex; align-items: center; justify-content: space-between;">
       <code id="workspaceKeyDisplay" style="font-family: 'DM Mono', monospace; font-size: 0.9rem; color: #fff;">----</code>
@@ -146,10 +163,10 @@
     </div>
 
     <div style="margin-top: 1rem;">
-      <p class="modal-text" style="margin-bottom: 0.5rem; font-size: 0.8rem;">Entrar em outro workspace:</p>
+      <p class="modal-text" style="margin-bottom: 0.5rem; font-size: 0.8rem;">Trocar chave de workspace (Local):</p>
       <div style="display: flex; gap: 0.5rem;">
         <input class="lg-input sm" id="workspaceInput" placeholder="cole-sua-chave-aqui" autocomplete="off"/>
-        <button class="lg-btn primary sm" id="joinWorkspaceBtn">OK</button>
+        <button class="lg-btn primary sm" id="joinWorkspaceBtn">Trocar</button>
       </div>
     </div>
 
