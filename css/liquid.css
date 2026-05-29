@@ -441,3 +441,27 @@ body {
   font-size: 0.85rem;
   line-height: 1.4;
 }
+
+/* Theme toggle icon visibility */
+.icon-moon, .icon-sun {
+  width: 18px;
+  height: 18px;
+  display: block;
+  transition: opacity 0.2s ease;
+}
+
+/* Dark mode: show moon, hide sun */
+[data-theme="dark"] .icon-sun {
+  display: none;
+}
+[data-theme="dark"] .icon-moon {
+  display: block;
+}
+
+/* Light mode: show sun, hide moon */
+[data-theme="light"] .icon-moon {
+  display: none;
+}
+[data-theme="light"] .icon-sun {
+  display: block;
+}
