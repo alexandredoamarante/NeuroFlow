@@ -65,13 +65,60 @@
 
   .toolbar-actions {
     width: 100%;
-    justify-content: space-between;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    justify-content: flex-start;
+  }
+
+  .toolbar-actions .lg-btn {
+    flex: 1 1 auto;
+    min-width: 120px;
   }
 
   .node-img {
     width: 100%;
+    max-width: 100%;
     height: auto;
     aspect-ratio: 16/10;
+  }
+
+  .tree-node {
+    margin-left: 0.5rem !important;
+    padding-left: 0.5rem !important;
+  }
+
+  .node-content {
+    padding-left: 12px !important;
+  }
+}
+
+@media (max-width: 480px) {
+  .back-btn, #deleteTaskBtn {
+    width: 32px !important;
+    height: 32px !important;
+    padding: 0 !important;
+    overflow: hidden !important;
+    white-space: nowrap !important;
+    display: inline-flex !important;
+    align-items: center !important;
+    justify-content: center !important;
+    font-size: 0 !important;
+    color: transparent !important;
+    text-shadow: none !important;
+  }
+
+  .back-btn svg, .back-btn i, #deleteTaskBtn svg, #deleteTaskBtn i {
+    width: 18px !important;
+    height: 18px !important;
+    margin: 0 !important;
+    color: var(--text-color) !important;
+    display: block;
+    flex-shrink: 0;
+  }
+
+  #deleteTaskBtn svg, #deleteTaskBtn i {
+    color: #ff5555 !important;
   }
 }
 

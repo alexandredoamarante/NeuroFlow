@@ -29,6 +29,20 @@
     --radius-lg: 16px;
     --radius-md: 12px;
   }
+
+  .modal-overlay {
+    padding: 1rem;
+  }
+
+  .modal-panel {
+    padding: 1.25rem;
+  }
+}
+
+@media (max-width: 480px) {
+  #authText {
+    display: none;
+  }
 }
 
 [data-theme="light"] {

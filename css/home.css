@@ -72,13 +72,17 @@
 
 .tasks-grid {
   display: grid;
-  grid-template-columns: repeat(auto-fill, minmax(300px, 1fr));
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
   gap: 1.5rem;
 }
 
 @media (max-width: 640px) {
+  .create-panel {
+    padding: 1.25rem;
+  }
+
   .create-form {
-    flex-direction: column;
+    gap: 1rem;
   }
 
   .tasks-grid {
@@ -86,7 +90,15 @@
   }
 
   .color-options {
-    grid-template-columns: repeat(6, 1fr);
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(32px, 1fr));
+    gap: 10px;
+    width: 100%;
+  }
+
+  .color-dot {
+    width: 32px;
+    height: 32px;
   }
 }
 
